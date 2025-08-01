@@ -1,0 +1,6 @@
+**venv/
+**.env
+.cursor/
+videos/
+audios/
+transcripts/

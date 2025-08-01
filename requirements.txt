@@ -1,0 +1,8 @@
+# It is recommended to install torch, torchvision, and torchaudio from
+# the official PyTorch website to ensure CUDA compatibility for your GPU.
+# See: https://pytorch.org/get-started/locally/
+torch
+torchvision
+torchaudio
+moviepy
+PyYAML
