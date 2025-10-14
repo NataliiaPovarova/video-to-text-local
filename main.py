@@ -3,6 +3,7 @@ from moviepy import VideoFileClip
 import os
 import yaml
 import torch
+import argparse
 
 VIDEOS_PATH = "videos"
 AUDIOS_PATH = "audios"
@@ -39,20 +40,31 @@ else:
 print(f"Using device: {device}")
 # ---------------------
 
+# --- CLI args ---
+parser = argparse.ArgumentParser(description="Transcribe videos or audios using local Whisper")
+parser.add_argument(
+    "--type",
+    choices=["video", "audio"],
+    required=True,
+    help="Input type: 'video' to read from videos/ and extract audio; 'audio' to read from audios/",
+)
+args = parser.parse_args()
+
 print("Loading whisper model...")
 model = whisper.load_model(model_name, device=device)
 print("Model loaded.")
 
-# Process each media file in the videos folder
-for media_file in os.listdir(VIDEOS_PATH):
-    media_path = os.path.join(VIDEOS_PATH, media_file)
-    if not os.path.isfile(media_path):
-        continue
+if args.type == "video":
+    # Process each video file in the videos folder
+    for media_file in os.listdir(VIDEOS_PATH):
+        media_path = os.path.join(VIDEOS_PATH, media_file)
+        if not os.path.isfile(media_path):
+            continue
 
-    extension = os.path.splitext(media_file)[1].lower()
-    audio_source_path = None
+        extension = os.path.splitext(media_file)[1].lower()
+        if extension not in VIDEO_EXTENSIONS:
+            continue
 
-    if extension in VIDEO_EXTENSIONS:
         print(f"Processing video {media_file}...")
         audio_output_path = os.path.join(
             AUDIOS_PATH, os.path.splitext(media_file)[0] + ".mp3"
@@ -63,24 +75,38 @@ for media_file in os.listdir(VIDEOS_PATH):
                 print(f"No audio track found in {media_file}. Skipping file.")
                 continue
             video.audio.write_audiofile(audio_output_path)
-        audio_source_path = audio_output_path
         print("Audio extracted.")
-    elif extension in AUDIO_EXTENSIONS:
+
+        print(f"Transcribing audio for {media_file}...")
+        result = model.transcribe(audio_output_path, language=language, fp16=False)
+        print("Transcription complete.")
+
+        transcript_filename = os.path.splitext(media_file)[0] + ".txt"
+        with open(os.path.join(TRANSCRIPTS_FOLDER, transcript_filename), "w", encoding='utf-8') as f:
+            f.write(result['text'])
+
+        print(f"Transcript for {media_file} saved to {transcript_filename}")
+
+elif args.type == "audio":
+    # Process each audio file in the audios folder
+    for media_file in os.listdir(AUDIOS_PATH):
+        media_path = os.path.join(AUDIOS_PATH, media_file)
+        if not os.path.isfile(media_path):
+            continue
+
+        extension = os.path.splitext(media_file)[1].lower()
+        if extension not in AUDIO_EXTENSIONS:
+            continue
+
         print(f"Processing audio {media_file}...")
-        audio_source_path = media_path
-    else:
-        continue
+        print(f"Transcribing audio for {media_file}...")
+        result = model.transcribe(media_path, language=language, fp16=False)
+        print("Transcription complete.")
 
-    print(f"Transcribing audio for {media_file}...")
-    # NOTE: The warning about GPU incompatibility comes from PyTorch, not directly from this call.
-    # If device is 'cpu', this will be slow.
-    result = model.transcribe(audio_source_path, language=language, fp16=False)
-    print("Transcription complete.")
+        transcript_filename = os.path.splitext(media_file)[0] + ".txt"
+        with open(os.path.join(TRANSCRIPTS_FOLDER, transcript_filename), "w", encoding='utf-8') as f:
+            f.write(result['text'])
 
-    transcript_filename = os.path.splitext(media_file)[0] + ".txt"
-    with open(os.path.join(TRANSCRIPTS_FOLDER, transcript_filename), "w", encoding='utf-8') as f:
-        f.write(result['text'])
+        print(f"Transcript for {media_file} saved to {transcript_filename}")
 
-    print(f"Transcript for {media_file} saved to {transcript_filename}")
-
-print("All media files have been transcribed.")
+print("All processing completed.")

@@ -6,3 +6,4 @@ torchvision
 torchaudio
 moviepy
 PyYAML
+openai-whisper
