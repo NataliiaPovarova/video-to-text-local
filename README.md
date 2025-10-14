@@ -1,13 +1,14 @@
-# Video Transcription with Local Whisper
+# Video / Audio Transcription with Local Whisper
 
 This project transcribes audio from video files into text using a locally run instance of OpenAI's Whisper model.
 
 ## Features
 
-- Extracts audio from video files (`.mp4`, `.mov`, `.avi`, etc.).
-- Transcribes the audio using a specified Whisper model.
-- Saves the resulting transcriptions as `.txt` files.
-- Configuration is managed via a `params.yaml` file.
+- Extracts audio from video files (`.mp4`, `.mov`, `.avi`, `.mkv`).
+- Transcribes audio files directly (`.mp3`, `.m4a`).
+- Select input source with `--type` flag: `video` or `audio`.
+- Saves transcriptions as `.txt` files in `transcripts/`.
+- Configuration is managed via `params.yaml`.
 
 ## Project Structure
 
@@ -34,6 +35,12 @@ choco install ffmpeg
 ```
 
 Alternatively, you can download `ffmpeg` from [their official website](https://ffmpeg.org/download.html), extract it, and manually add its `bin` directory to your system's PATH environment variable.
+
+**On MacOS**
+```bash
+brew install ffmpeg
+```
+If you don't have Homebrew, install from [here](https://brew.sh/)
 
 ### 2. Python Environment
 
@@ -73,20 +80,32 @@ pip install torch torchvision torchaudio --index-url https://download.pytorch.or
 
 ## Configuration
 
-Before running the script, you can configure the transcription settings in the `params.yaml` file:
+Configure transcription settings in `params.yaml`:
 
 ```yaml
-language: ru       # Language of the audio (e.g., 'en', 'es', 'fr', 'ru')
-model: large-v3  # Whisper model to use (e.g., 'tiny', 'base', 'small', 'medium', 'large-v3')
+language: ru        # Language code (e.g., 'en', 'es', 'fr', 'ru')
+model: base     # Whisper model: tiny | base | small | medium | large-v3
 ```
+Pick the model based on accuracy vs. speed trade-offs and your hardware capacity.
 
 ## Usage
 
-1.  Place your video files inside the `videos/` directory.
-2.  Run the main script from your terminal:
+### Process videos (reads from `videos/`, extracts audio to `audios/`, then transcribes)
+1. Put your video inside folder `videos/`
+2.
+  ```bash
+  python main.py --type video
+  ```
 
-    ```bash
-    python main.py
-    ```
+### Process audios (reads `.mp3`/`.m4a` from `audios/`):
+1. Put your audio inside `audios/`
+2.
+  ```bash
+  python main.py --type audio
+  ```
 
-The script will process each video, creating an audio file in `audios/` and a final text file in `transcripts/`. You will see progress updates printed in the console.
+Supported extensions:
+- Videos: `.mp4`, `.mov`, `.avi`, `.mkv`
+- Audios: `.mp3`, `.m4a`
+
+Outputs are written to `transcripts/`.
