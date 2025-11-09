@@ -4,6 +4,11 @@ import os
 import yaml
 import torch
 import argparse
+import shutil
+import sys
+import threading
+import time
+from tqdm import tqdm
 
 VIDEOS_PATH = "videos"
 AUDIOS_PATH = "audios"
@@ -50,9 +55,80 @@ parser.add_argument(
 )
 args = parser.parse_args()
 
+# --- Dependencies check ---
+def ensure_ffmpeg_available() -> None:
+    if shutil.which("ffmpeg") is None:
+        print(
+            "ERROR: 'ffmpeg' was not found on PATH. Whisper relies on ffmpeg to decode audio.\n"
+            "Install ffmpeg and restart your terminal/IDE. On Windows with Chocolatey:\n"
+            "  choco install ffmpeg\n"
+            "Or download from https://ffmpeg.org/download.html and add its 'bin' folder to PATH."
+        )
+        sys.exit(1)
+
+ensure_ffmpeg_available()
+
 print("Loading whisper model...")
 model = whisper.load_model(model_name, device=device)
 print("Model loaded.")
+
+def _get_audio_duration_seconds(audio_path: str) -> float | None:
+    """
+    Try to determine audio duration using MoviePy. Returns None if unavailable.
+    """
+    try:
+        # Prefer top-level import (MoviePy v2 style)
+        from moviepy import AudioFileClip  # type: ignore
+        with AudioFileClip(audio_path) as clip:
+            return float(clip.duration) if clip.duration else None
+    except Exception:
+        try:
+            # Fallback for MoviePy v1 style
+            from moviepy.editor import AudioFileClip as EditorAudioFileClip  # type: ignore
+            with EditorAudioFileClip(audio_path) as clip:
+                return float(clip.duration) if clip.duration else None
+        except Exception:
+            return None
+
+def transcribe_with_progress(model_obj, audio_path: str, language: str, description: str):
+    """
+    Display a progress bar based on wall-clock time vs. media duration
+    while Whisper is running. This is an estimate (there is no callback API).
+    """
+    total_seconds = _get_audio_duration_seconds(audio_path)
+    stop_event = threading.Event()
+    pbar: tqdm | None = None
+
+    def _run_progress_bar():
+        if total_seconds is None or total_seconds <= 0:
+            return  # no progress bar if we can't estimate duration
+        nonlocal pbar
+        pbar = tqdm(total=int(total_seconds), desc=description, unit="s")
+        start_time = time.time()
+        while not stop_event.is_set():
+            elapsed = time.time() - start_time
+            # Clamp to total
+            current = int(min(elapsed, pbar.total))
+            if current != pbar.n:
+                pbar.n = current
+                pbar.refresh()
+            time.sleep(0.25)
+        # complete the bar
+        pbar.n = pbar.total
+        pbar.refresh()
+        pbar.close()
+
+    thread: threading.Thread | None = None
+    if total_seconds and total_seconds > 0:
+        thread = threading.Thread(target=_run_progress_bar, daemon=True)
+        thread.start()
+
+    try:
+        return model_obj.transcribe(audio_path, language=language, fp16=False)
+    finally:
+        stop_event.set()
+        if thread:
+            thread.join(timeout=0.5)
 
 if args.type == "video":
     # Process each video file in the videos folder
@@ -78,7 +154,7 @@ if args.type == "video":
         print("Audio extracted.")
 
         print(f"Transcribing audio for {media_file}...")
-        result = model.transcribe(audio_output_path, language=language, fp16=False)
+        result = transcribe_with_progress(model, audio_output_path, language, f"Transcribing {media_file}")
         print("Transcription complete.")
 
         transcript_filename = os.path.splitext(media_file)[0] + ".txt"
@@ -100,7 +176,7 @@ elif args.type == "audio":
 
         print(f"Processing audio {media_file}...")
         print(f"Transcribing audio for {media_file}...")
-        result = model.transcribe(media_path, language=language, fp16=False)
+        result = transcribe_with_progress(model, media_path, language, f"Transcribing {media_file}")
         print("Transcription complete.")
 
         transcript_filename = os.path.splitext(media_file)[0] + ".txt"

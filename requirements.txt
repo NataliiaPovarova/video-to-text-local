@@ -7,3 +7,4 @@ torchaudio
 moviepy
 PyYAML
 openai-whisper
+tqdm
