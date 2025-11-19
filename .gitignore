@@ -14,3 +14,4 @@ transcripts/
 .augment/rules/byterover-rules.md
 .DS_Store
 venv_mac/
+node_modules/
