@@ -1,0 +1,14 @@
+venv
+venv_mac
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache
+videos
+audios
+transcripts
+.git
+.gitignore
+CLAUDE.md
+README.md~
