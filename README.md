@@ -1,5 +1,101 @@
 # Video / Audio Transcription with Local Whisper
 
+This project transcribes media using a locally hosted Whisper model. Videos have their audio track extracted first, while audio files (`.mp3`, `.m4a`) are sent straight to transcription. Outputs are saved to `transcripts/`.
+
+## Features
+
+- CLI flag `--type` selects whether to process items from `videos/` or `audios/`.
+- Automatic audio extraction for supported video formats (`.mp4`, `.mov`, `.avi`, `.mkv`).
+- Progress indication during transcription (duration-based estimate).
+- Language and model configuration via `params.yaml`.
+
+## Project Layout
+
+```
+.
+├── audios/         # Input audio files or extracted audio
+├── videos/         # Input videos when running with --type video
+├── transcripts/    # Transcription outputs (created automatically)
+├── params.yaml     # Whisper language/model settings
+├── requirements.txt
+├── main.py         # Entry point
+├── Dockerfile      # Container image definition
+└── .dockerignore
+```
+
+## Configuration
+
+Edit `params.yaml` to choose the Whisper language and model size:
+
+```
+language: ru
+model: base
+```
+## Run with Docker (recommended)
+
+The provided `Dockerfile` bundles all dependencies (including ffmpeg). The image uses CPU-only PyTorch wheels.
+
+### Build the image
+
+```
+docker build -t whisper-transcriber .
+```
+
+### Run for videos
+
+```
+docker run --rm \
+  -v "$(pwd)/videos:/app/videos" \
+  -v "$(pwd)/audios:/app/audios" \
+  -v "$(pwd)/transcripts:/app/transcripts" \
+  -v "$(pwd)/params.yaml:/app/params.yaml:ro" \
+  whisper-transcriber --type video
+```
+
+### Run for audios
+
+```
+docker run --rm \
+  -v "$(pwd)/audios:/app/audios" \
+  -v "$(pwd)/transcripts:/app/transcripts" \
+  -v "$(pwd)/params.yaml:/app/params.yaml:ro" \
+  whisper-transcriber --type audio
+```
+
+> Tip: mount specific files/folders as needed; transcripts directory will be created inside the container if it does not exist.
+
+## Run without Docker (make sure ffmpeg is in PATH!)
+
+1. **Install ffmpeg** and ensure it is on your `PATH`.
+   - macOS: `brew install ffmpeg`
+   - Windows (PowerShell admin): `choco install ffmpeg`
+
+2. **Create a virtual environment** (optional but recommended):
+
+```
+python -m venv venv
+source venv/bin/activate  # Windows: venv\Scripts\activate
+```
+
+3. **Install dependencies**:
+
+```
+pip install -r requirements.txt
+```
+
+4. **Run the script**:
+   - Process videos: `python main.py --type video`
+   - Process audios: `python main.py --type audio`
+
+Media files must be placed in their respective folders before running the command. Transcripts are written to `transcripts/`.
+
+## Notes
+
+- GPU acceleration is not configured inside the container; transcription will run on CPU.
+- Ensure mounted directories exist locally before running the container to avoid permission issues.
+- Adjust `params.yaml` (e.g., model size) based on accuracy vs. performance trade-offs. Larger models require more CPU time and memory.
+# Video / Audio Transcription with Local Whisper
+
 This project transcribes audio from video files into text using a locally run instance of OpenAI's Whisper model.
 
 ## Features
