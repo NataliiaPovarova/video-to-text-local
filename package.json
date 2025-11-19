@@ -1,0 +1,35 @@
+{
+  "name": "video_to_text",
+  "version": "1.0.0",
+  "description": "This project transcribes media using a locally hosted Whisper model. Videos have their audio track extracted first, while audio files (`.mp3`, `.m4a`) are sent straight to transcription. Outputs are saved to `transcripts/`.",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/NataliiaPovarova/video-to-text-local.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "release": {
+  "branches": ["master"],
+  "plugins": [
+    "@semantic-release/commit-analyzer",
+    "@semantic-release/release-notes-generator",
+    "@semantic-release/github"
+  ]
+},
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/NataliiaPovarova/video-to-text-local/issues"
+  },
+  "homepage": "https://github.com/NataliiaPovarova/video-to-text-local#readme",
+  "devDependencies": {
+    "@semantic-release/commit-analyzer": "^13.0.1",
+    "@semantic-release/github": "^11.0.6",
+    "@semantic-release/release-notes-generator": "^14.1.0",
+    "semantic-release": "^24.2.9"
+  }
+}
