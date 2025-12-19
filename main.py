@@ -28,20 +28,57 @@ language = params["language"]
 model_name = params["model"]
 
 # --- Device Checking ---
-device = "cpu"
-if torch.cuda.is_available():
-    print("CUDA is available, checking for compatibility...")
-    try:
-        # This will raise a warning if not compatible, and might error on some setups.
-        torch.cuda.get_device_name(0)
-        print(f"GPU: {torch.cuda.get_device_name(0)}")
-        device = "cuda"
-    except Exception as e:
-        print(f"Could not use GPU due to an error: {e}")
-        print("Falling back to CPU.")
-else:
-    print("CUDA not available, using CPU.")
 
+def _select_device() -> str:
+    """
+    Prefer CUDA when available and emit actionable diagnostics otherwise.
+    """
+    if torch.cuda.is_available():
+        try:
+            gpu_name = torch.cuda.get_device_name(0)
+            print(f"CUDA is available. Using GPU: {gpu_name}")
+        except Exception as exc:
+            print(f"CUDA initialization warning: {exc}")
+        return "cuda"
+
+    diagnostics: list[str] = []
+    try:
+        if hasattr(torch.backends, "cuda") and not torch.backends.cuda.is_built():
+            diagnostics.append("Current PyTorch build lacks CUDA support.")
+    except Exception as exc:  # pragma: no cover - defensive
+        diagnostics.append(f"Could not query torch.backends.cuda: {exc}")
+
+    cuda_version = getattr(torch.version, "cuda", None)
+    if not cuda_version:
+        diagnostics.append(
+            "torch.version.cuda is None. Install GPU-enabled wheels, "
+            "for example:\n"
+            "  pip install --upgrade torch torchvision torchaudio "
+            "--index-url https://download.pytorch.org/whl/cu121"
+        )
+    else:
+        diagnostics.append(f"PyTorch reports CUDA runtime {cuda_version}.")
+
+    try:
+        gpu_count = torch.cuda.device_count()
+        diagnostics.append(f"Detected CUDA devices: {gpu_count}")
+        if gpu_count == 0:
+            diagnostics.append(
+                "No CUDA-capable GPUs detected. Ensure NVIDIA drivers are installed "
+                "and `nvidia-smi` works."
+            )
+    except Exception as exc:  # pragma: no cover - defensive
+        diagnostics.append(f"Could not enumerate CUDA devices: {exc}")
+
+    print("CUDA not available, defaulting to CPU.")
+    if diagnostics:
+        print("Diagnostics:")
+        for line in diagnostics:
+            print(f" - {line}")
+    return "cpu"
+
+
+device = _select_device()
 print(f"Using device: {device}")
 # ---------------------
 
