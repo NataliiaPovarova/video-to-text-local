@@ -5,7 +5,7 @@ This project transcribes media using a locally hosted Whisper model. Videos have
 ## Features
 
 - CLI flag `--type` selects whether to process items from `videos/` or `audios/`.
-- Automatic audio extraction for supported video formats (`.mp4`, `.mov`, `.avi`, `.mkv`).
+- Automatic audio extraction for supported video formats (`.mp4`, `.mov`, `.avi`, `.mkv`, `.webm`).
 - Progress indication during transcription (duration-based estimate).
 - Language and model configuration via `params.yaml`.
 
@@ -101,7 +101,7 @@ model: base     # tiny | base | small | medium | large-v3
    ```
 
 **Supported extensions:**
-- Videos: `.mp4`, `.mov`, `.avi`, `.mkv`
+- Videos: `.mp4`, `.mov`, `.avi`, `.mkv`, `.webm`
 - Audio: `.mp3`, `.m4a`
 
 ## Run with Docker

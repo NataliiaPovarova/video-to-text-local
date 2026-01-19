@@ -13,7 +13,7 @@ from tqdm import tqdm
 VIDEOS_PATH = "videos"
 AUDIOS_PATH = "audios"
 TRANSCRIPTS_FOLDER = "transcripts"
-VIDEO_EXTENSIONS = (".mp4", ".mov", ".avi", ".mkv")
+VIDEO_EXTENSIONS = (".mp4", ".mov", ".avi", ".mkv", ".webm")
 AUDIO_EXTENSIONS = (".mp3", ".m4a")
 
 # Create directories if they don't exist
