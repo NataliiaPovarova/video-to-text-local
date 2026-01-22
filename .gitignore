@@ -15,3 +15,4 @@ transcripts/
 .DS_Store
 venv_mac/
 node_modules/
+training_data/

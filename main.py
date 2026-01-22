@@ -8,6 +8,9 @@ import shutil
 import sys
 import threading
 import time
+import json
+import urllib.request
+import urllib.error
 from tqdm import tqdm
 
 VIDEOS_PATH = "videos"
@@ -25,7 +28,15 @@ with open("params.yaml", "r") as f:
 
 #parameters
 language = params["language"]
-model_name = params["model"]
+transcription_model_name = params["transcription_model"]
+cleanup_model_name = params["cleanup_model"]
+
+with open("prompts.yaml", "r") as f:
+    prompts = yaml.safe_load(f)
+
+cleanup_prompt = prompts["cleanup_prompt"]
+if not isinstance(cleanup_prompt, str) or not cleanup_prompt.strip():
+    raise ValueError("prompts.yaml must define a non-empty cleanup_prompt")
 
 # --- Device Checking ---
 
@@ -90,6 +101,11 @@ parser.add_argument(
     required=True,
     help="Input type: 'video' to read from videos/ and extract audio; 'audio' to read from audios/",
 )
+parser.add_argument(
+    "--cleanup",
+    action="store_true",
+    help="Run optional cleanup via local Ollama and save _clean.txt",
+)
 args = parser.parse_args()
 
 # --- Dependencies check ---
@@ -106,7 +122,7 @@ def ensure_ffmpeg_available() -> None:
 ensure_ffmpeg_available()
 
 print("Loading whisper model...")
-model = whisper.load_model(model_name, device=device)
+whisper_model = whisper.load_model(transcription_model_name, device=device)
 print("Model loaded.")
 
 def _get_audio_duration_seconds(audio_path: str) -> float | None:
@@ -167,6 +183,55 @@ def transcribe_with_progress(model_obj, audio_path: str, language: str, descript
         if thread:
             thread.join(timeout=0.5)
 
+def _cleanup_with_ollama(text: str) -> str:
+    """
+    Clean transcription text using the local Ollama server.
+    """
+    payload = {
+        "model": cleanup_model_name,
+        "prompt": f"{cleanup_prompt.strip()}\n\n{text.strip()}",
+        "stream": False,
+        "options": {"num_gpu": 1 if device == "cuda" else 0},
+    }
+    data = json.dumps(payload).encode("utf-8")
+    request = urllib.request.Request(
+        "http://localhost:11434/api/generate",
+        data=data,
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=600) as response:
+            raw = response.read().decode("utf-8")
+    except urllib.error.HTTPError as exc:
+        body = exc.read().decode("utf-8") if exc.fp else ""
+        if exc.code == 401 and body:
+            try:
+                parsed_body = json.loads(body)
+                signin_url = parsed_body.get("signin_url")
+                error_label = parsed_body.get("error")
+                if signin_url:
+                    raise RuntimeError(
+                        "Ollama rejected the request as unauthorized. "
+                        f"Sign in here to enable local access: {signin_url}"
+                    ) from exc
+                if error_label:
+                    raise RuntimeError(f"Ollama unauthorized: {error_label}") from exc
+            except json.JSONDecodeError:
+                pass
+        raise RuntimeError(f"Ollama HTTP error {exc.code}: {body}") from exc
+    except urllib.error.URLError as exc:
+        raise RuntimeError(
+            "Failed to reach Ollama at http://localhost:11434. "
+            "Ensure Ollama is running and the model is pulled."
+        ) from exc
+
+    parsed = json.loads(raw)
+    cleaned = parsed.get("response", "")
+    if not isinstance(cleaned, str) or not cleaned.strip():
+        raise RuntimeError("Ollama returned an empty cleanup response.")
+    return cleaned.strip()
+
 if args.type == "video":
     # Process each video file in the videos folder
     for media_file in os.listdir(VIDEOS_PATH):
@@ -191,7 +256,12 @@ if args.type == "video":
         print("Audio extracted.")
 
         print(f"Transcribing audio for {media_file}...")
-        result = transcribe_with_progress(model, audio_output_path, language, f"Transcribing {media_file}")
+        result = transcribe_with_progress(
+            whisper_model,
+            audio_output_path,
+            language,
+            f"Transcribing {media_file}",
+        )
         print("Transcription complete.")
 
         transcript_filename = os.path.splitext(media_file)[0] + ".txt"
@@ -199,6 +269,21 @@ if args.type == "video":
             f.write(result['text'])
 
         print(f"Transcript for {media_file} saved to {transcript_filename}")
+
+        if args.cleanup:
+            print(f"Cleaning transcript for {media_file}...")
+            cleaned_filename = os.path.splitext(media_file)[0] + "_clean.txt"
+            try:
+                cleaned_text = _cleanup_with_ollama(result['text'])
+                with open(
+                    os.path.join(TRANSCRIPTS_FOLDER, cleaned_filename),
+                    "w",
+                    encoding='utf-8',
+                ) as f:
+                    f.write(cleaned_text)
+                print(f"Cleaned transcript saved to {cleaned_filename}")
+            except Exception as exc:
+                print(f"Cleanup failed for {media_file}: {exc}")
 
 elif args.type == "audio":
     # Process each audio file in the audios folder
@@ -213,7 +298,12 @@ elif args.type == "audio":
 
         print(f"Processing audio {media_file}...")
         print(f"Transcribing audio for {media_file}...")
-        result = transcribe_with_progress(model, media_path, language, f"Transcribing {media_file}")
+        result = transcribe_with_progress(
+            whisper_model,
+            media_path,
+            language,
+            f"Transcribing {media_file}",
+        )
         print("Transcription complete.")
 
         transcript_filename = os.path.splitext(media_file)[0] + ".txt"
@@ -221,5 +311,20 @@ elif args.type == "audio":
             f.write(result['text'])
 
         print(f"Transcript for {media_file} saved to {transcript_filename}")
+
+        if args.cleanup:
+            print(f"Cleaning transcript for {media_file}...")
+            cleaned_filename = os.path.splitext(media_file)[0] + "_clean.txt"
+            try:
+                cleaned_text = _cleanup_with_ollama(result['text'])
+                with open(
+                    os.path.join(TRANSCRIPTS_FOLDER, cleaned_filename),
+                    "w",
+                    encoding='utf-8',
+                ) as f:
+                    f.write(cleaned_text)
+                print(f"Cleaned transcript saved to {cleaned_filename}")
+            except Exception as exc:
+                print(f"Cleanup failed for {media_file}: {exc}")
 
 print("All processing completed.")

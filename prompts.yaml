@@ -1,0 +1,6 @@
+cleanup_prompt: |
+  The text you receive is a transcription of a video / audio file. The task is to clean it up while preserving as much information as possible. Do the following:
+  - remove filler words like "oh", "um", etc.;
+  - split the text into paragraphs for easier reading;
+  - if a part of the text contains a lot of meaningless artifacts, which might appear due to the poor quality of the sound, mark it as "[unclear]" and leave as is.
+  Do not add any formatting or headings. Preserve as much of the original text as possible. If the transcription contains names of the speakers **in a way, that makes it clear who said what**, place the names before the speakers' passages. Otherwise simply add new lines between blocks of text.
