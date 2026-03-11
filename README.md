@@ -1,6 +1,6 @@
 # Video / Audio Transcription with Local Whisper
 
-This project transcribes media using a locally hosted Whisper model, then optionally cleans the transcript with a local Ollama model. Videos have their audio track extracted first, while audio files (`.mp3`, `.m4a`) are sent straight to transcription. Outputs are saved to `transcripts/`.
+This project transcribes media using a locally hosted Whisper model, then optionally cleans the transcript with a local Ollama model. Videos have their audio track extracted first, while audio files (`.mp3`, `.m4a`) are sent straight to transcription. Outputs are saved to `transcripts/`, and execution logs are written to `logs/`.
 
 ## Features
 
@@ -8,20 +8,29 @@ This project transcribes media using a locally hosted Whisper model, then option
 - Automatic audio extraction for supported video formats (`.mp4`, `.mov`, `.avi`, `.mkv`, `.webm`).
 - Optional cleanup step via local Ollama using `cleanup_model` and `cleanup_prompt`.
 - Progress indication during transcription (duration-based estimate).
-- Language and model configuration via `params.yaml`.
+- Language and model configuration via `configurations/params.yaml`.
+- Runtime paths and processing options via `configurations/general_config.yaml`.
+- Structured codebase with a root orchestrator (`main.py`) and domain modules in `src/`.
 
 ## Project Layout
 
 ```
 .
-├── audios/         # Input audio files or extracted audio
-├── videos/         # Input videos when running with --type video
-├── transcripts/    # Transcription outputs (created automatically)
-├── params.yaml     # Whisper language/model settings
-├── prompts.yaml    # Cleanup prompt for Ollama
+├── audios/                     # Input audio files or extracted audio
+├── videos/                     # Input videos when running with --type video
+├── transcripts/                # Transcription outputs (created automatically)
+├── logs/                       # Runtime logs
+├── configurations/
+│   ├── general_config.yaml     # Runtime paths, extensions, logging, and service settings
+│   ├── params.yaml             # Whisper language/model settings
+│   └── prompts.yaml            # Cleanup prompt for Ollama
+├── src/
+│   ├── cleanup.py              # Ollama cleanup logic
+│   ├── file_preprocessing.py   # Media discovery/extraction/transcript file operations
+│   └── utils.py                # Reusable utilities and shared error handling
 ├── requirements.txt
-├── main.py         # Entry point
-├── Dockerfile      # Container image definition
+├── main.py                     # Root orchestrator entrypoint
+├── Dockerfile                  # Container image definition
 └── .dockerignore
 ```
 
@@ -90,7 +99,7 @@ pip install -r requirements.txt
 
 ## Configuration
 
-Edit `params.yaml` to choose the Whisper transcription model and cleanup model:
+Edit `configurations/params.yaml` to choose the Whisper transcription model and cleanup model:
 
 ```yaml
 language: ru    # e.g. 'en', 'ru'
@@ -98,7 +107,7 @@ transcription_model: base     # tiny | base | small | medium | large-v3
 cleanup_model: llama3.1:8b    # Ollama model name
 ```
 
-Edit `prompts.yaml` to customize cleanup instructions:
+Edit `configurations/prompts.yaml` to customize cleanup instructions:
 
 ```yaml
 cleanup_prompt: |
@@ -107,6 +116,15 @@ cleanup_prompt: |
   - split the text into paragraphs for easier reading;
   - if a part of the text contains a lot of meaningless artifacts, which might appear due to the poor quality of the sound, mark it as "[unclear]" and leave as is.
 ```
+
+Edit `configurations/general_config.yaml` to control:
+- input/output paths (`videos`, `audios`, `transcripts`, `logs`);
+- supported media extensions;
+- output naming (`.txt`, `_clean`, extracted audio extension);
+- Ollama endpoint and timeout;
+- logging level, log filename, and log format.
+
+By default, logs are written to `logs/transcriber.log`.
 
 ## Usage
 
@@ -139,6 +157,7 @@ python main.py --type video --cleanup
 **Outputs:**
 - Raw transcript: `<name>.txt`
 - Cleaned transcript: `<name>_clean.txt` (via Ollama, only with `--cleanup`)
+- Logs: `logs/transcriber.log`
 
 ## Run with Docker
 
@@ -153,6 +172,6 @@ docker run --rm \
   -v "$(pwd)/videos:/app/videos" \
   -v "$(pwd)/audios:/app/audios" \
   -v "$(pwd)/transcripts:/app/transcripts" \
-  -v "$(pwd)/params.yaml:/app/params.yaml:ro" \
+  -v "$(pwd)/configurations:/app/configurations:ro" \
   whisper-transcriber --type video
 ```

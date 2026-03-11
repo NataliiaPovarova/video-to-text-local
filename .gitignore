@@ -16,3 +16,9 @@ transcripts/
 venv_mac/
 node_modules/
 training_data/
+
+# OpenMemory - IDE/Assistant specific rules
+.cursor\rules\openmemory.mdc
+CLAUDE.md
+
+logs/

@@ -1,0 +1,41 @@
+paths:
+  videos: "videos"
+  audios: "audios"
+  transcripts: "transcripts"
+  logs: "logs"
+
+files:
+  params: "configurations/params.yaml"
+  prompts: "configurations/prompts.yaml"
+
+extensions:
+  video:
+    - ".mp4"
+    - ".mov"
+    - ".avi"
+    - ".mkv"
+    - ".webm"
+  audio:
+    - ".mp3"
+    - ".m4a"
+
+output:
+  transcript_extension: ".txt"
+  cleaned_suffix: "_clean"
+  extracted_audio_extension: ".mp3"
+
+ollama:
+  url: "http://localhost:11434/api/generate"
+  timeout_seconds: 600
+  request_content_type: "application/json"
+
+processing:
+  progress_update_interval_seconds: 0.25
+
+dependencies:
+  ffmpeg_executable: "ffmpeg"
+
+logging:
+  level: "INFO"
+  file_name: "transcriber.log"
+  format: "%(asctime)s | %(levelname)s | %(name)s | %(message)s"

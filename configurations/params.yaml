@@ -1,0 +1,3 @@
+language: ru
+transcription_model: large-v3
+cleanup_model: gpt-oss:latest

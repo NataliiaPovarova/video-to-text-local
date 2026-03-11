@@ -1,330 +1,128 @@
-import whisper
-from moviepy import VideoFileClip
-import os
-import yaml
-import torch
-import argparse
-import shutil
+import functools
+import logging
 import sys
-import threading
-import time
-import json
-import urllib.request
-import urllib.error
-from tqdm import tqdm
+import whisper
 
-VIDEOS_PATH = "videos"
-AUDIOS_PATH = "audios"
-TRANSCRIPTS_FOLDER = "transcripts"
-VIDEO_EXTENSIONS = (".mp4", ".mov", ".avi", ".mkv", ".webm")
-AUDIO_EXTENSIONS = (".mp3", ".m4a")
+from src.cleanup import cleanup_with_ollama
+from src.file_preprocessing import process_audio_files, process_video_files
+from src.utils import (
+    ProcessingError,
+    ensure_directories,
+    ensure_ffmpeg_available,
+    load_yaml_file,
+    parse_cli_args,
+    select_device,
+    setup_logging,
+)
 
-# Create directories if they don't exist
-os.makedirs(AUDIOS_PATH, exist_ok=True)
-os.makedirs(TRANSCRIPTS_FOLDER, exist_ok=True)
 
-with open("params.yaml", "r") as f:
-    params = yaml.safe_load(f)
+CONFIG_PATH = "configurations/general_config.yaml"
 
-#parameters
-language = params["language"]
-transcription_model_name = params["transcription_model"]
-cleanup_model_name = params["cleanup_model"]
 
-with open("prompts.yaml", "r") as f:
-    prompts = yaml.safe_load(f)
+def orchestrate() -> None:
+    general_config = load_yaml_file(CONFIG_PATH)
+    paths = general_config["paths"]
+    files = general_config["files"]
+    output = general_config["output"]
+    ollama = general_config["ollama"]
+    processing = general_config["processing"]
+    dependencies = general_config["dependencies"]
+    logging_config = general_config["logging"]
 
-cleanup_prompt = prompts["cleanup_prompt"]
-if not isinstance(cleanup_prompt, str) or not cleanup_prompt.strip():
-    raise ValueError("prompts.yaml must define a non-empty cleanup_prompt")
+    logger = setup_logging(
+        logs_dir=paths["logs"],
+        level=logging_config["level"],
+        file_name=logging_config["file_name"],
+        log_format=logging_config["format"],
+    )
+    logger.info("Application started.")
 
-# --- Device Checking ---
+    videos_path = paths["videos"]
+    audios_path = paths["audios"]
+    transcripts_folder = paths["transcripts"]
+    params_path = files["params"]
+    prompts_path = files["prompts"]
+    transcript_extension = output["transcript_extension"]
+    cleaned_suffix = output["cleaned_suffix"]
+    extracted_audio_extension = output["extracted_audio_extension"]
 
-def _select_device() -> str:
-    """
-    Prefer CUDA when available and emit actionable diagnostics otherwise.
-    """
-    if torch.cuda.is_available():
-        try:
-            gpu_name = torch.cuda.get_device_name(0)
-            print(f"CUDA is available. Using GPU: {gpu_name}")
-        except Exception as exc:
-            print(f"CUDA initialization warning: {exc}")
-        return "cuda"
+    ensure_directories([audios_path, transcripts_folder], logger)
+    ensure_ffmpeg_available(dependencies["ffmpeg_executable"], logger)
 
-    diagnostics: list[str] = []
-    try:
-        if hasattr(torch.backends, "cuda") and not torch.backends.cuda.is_built():
-            diagnostics.append("Current PyTorch build lacks CUDA support.")
-    except Exception as exc:  # pragma: no cover - defensive
-        diagnostics.append(f"Could not query torch.backends.cuda: {exc}")
+    params = load_yaml_file(params_path)
+    prompts = load_yaml_file(prompts_path)
 
-    cuda_version = getattr(torch.version, "cuda", None)
-    if not cuda_version:
-        diagnostics.append(
-            "torch.version.cuda is None. Install GPU-enabled wheels, "
-            "for example:\n"
-            "  pip install --upgrade torch torchvision torchaudio "
-            "--index-url https://download.pytorch.org/whl/cu121"
+    language = params["language"]
+    transcription_model_name = params["transcription_model"]
+    cleanup_model_name = params["cleanup_model"]
+    cleanup_prompt = prompts["cleanup_prompt"]
+    if not isinstance(cleanup_prompt, str) or not cleanup_prompt.strip():
+        raise ProcessingError(f"{prompts_path} must define a non-empty cleanup_prompt")
+
+    args = parse_cli_args(videos_path, audios_path, cleaned_suffix, transcript_extension)
+    logger.info("CLI arguments parsed: type=%s, cleanup=%s", args.type, args.cleanup)
+
+    device = select_device(logger)
+    logger.info("Using device: %s", device)
+
+    logger.info("Loading Whisper model: %s", transcription_model_name)
+    whisper_model = whisper.load_model(transcription_model_name, device=device)
+    logger.info("Whisper model loaded.")
+
+    cleanup_func = None
+    if args.cleanup:
+        cleanup_func = functools.partial(
+            cleanup_with_ollama,
+            cleanup_model_name=cleanup_model_name,
+            cleanup_prompt=cleanup_prompt,
+            device=device,
+            ollama_url=ollama["url"],
+            ollama_timeout_seconds=ollama["timeout_seconds"],
+            ollama_request_content_type=ollama["request_content_type"],
+            logger=logger,
+        )
+        logger.info("Cleanup mode is enabled with model: %s", cleanup_model_name)
+
+    if args.type == "video":
+        process_video_files(
+            videos_path=videos_path,
+            audios_path=audios_path,
+            transcripts_folder=transcripts_folder,
+            video_extensions=tuple(general_config["extensions"]["video"]),
+            transcript_extension=transcript_extension,
+            cleaned_suffix=cleaned_suffix,
+            extracted_audio_extension=extracted_audio_extension,
+            whisper_model=whisper_model,
+            language=language,
+            enable_cleanup=args.cleanup,
+            cleanup_func=cleanup_func,
+            progress_update_interval_seconds=processing["progress_update_interval_seconds"],
+            logger=logger,
         )
     else:
-        diagnostics.append(f"PyTorch reports CUDA runtime {cuda_version}.")
-
-    try:
-        gpu_count = torch.cuda.device_count()
-        diagnostics.append(f"Detected CUDA devices: {gpu_count}")
-        if gpu_count == 0:
-            diagnostics.append(
-                "No CUDA-capable GPUs detected. Ensure NVIDIA drivers are installed "
-                "and `nvidia-smi` works."
-            )
-    except Exception as exc:  # pragma: no cover - defensive
-        diagnostics.append(f"Could not enumerate CUDA devices: {exc}")
-
-    print("CUDA not available, defaulting to CPU.")
-    if diagnostics:
-        print("Diagnostics:")
-        for line in diagnostics:
-            print(f" - {line}")
-    return "cpu"
-
-
-device = _select_device()
-print(f"Using device: {device}")
-# ---------------------
-
-# --- CLI args ---
-parser = argparse.ArgumentParser(description="Transcribe videos or audios using local Whisper")
-parser.add_argument(
-    "--type",
-    choices=["video", "audio"],
-    required=True,
-    help="Input type: 'video' to read from videos/ and extract audio; 'audio' to read from audios/",
-)
-parser.add_argument(
-    "--cleanup",
-    action="store_true",
-    help="Run optional cleanup via local Ollama and save _clean.txt",
-)
-args = parser.parse_args()
-
-# --- Dependencies check ---
-def ensure_ffmpeg_available() -> None:
-    if shutil.which("ffmpeg") is None:
-        print(
-            "ERROR: 'ffmpeg' was not found on PATH. Whisper relies on ffmpeg to decode audio.\n"
-            "Install ffmpeg and restart your terminal/IDE. On Windows with Chocolatey:\n"
-            "  choco install ffmpeg\n"
-            "Or download from https://ffmpeg.org/download.html and add its 'bin' folder to PATH."
+        process_audio_files(
+            audios_path=audios_path,
+            transcripts_folder=transcripts_folder,
+            audio_extensions=tuple(general_config["extensions"]["audio"]),
+            transcript_extension=transcript_extension,
+            cleaned_suffix=cleaned_suffix,
+            whisper_model=whisper_model,
+            language=language,
+            enable_cleanup=args.cleanup,
+            cleanup_func=cleanup_func,
+            progress_update_interval_seconds=processing["progress_update_interval_seconds"],
+            logger=logger,
         )
+
+    logger.info("All processing completed.")
+
+
+if __name__ == "__main__":
+    try:
+        orchestrate()
+    except ProcessingError as exc:
+        logging.error("Processing failed: %s", exc)
         sys.exit(1)
-
-ensure_ffmpeg_available()
-
-print("Loading whisper model...")
-whisper_model = whisper.load_model(transcription_model_name, device=device)
-print("Model loaded.")
-
-def _get_audio_duration_seconds(audio_path: str) -> float | None:
-    """
-    Try to determine audio duration using MoviePy. Returns None if unavailable.
-    """
-    try:
-        # Prefer top-level import (MoviePy v2 style)
-        from moviepy import AudioFileClip  # type: ignore
-        with AudioFileClip(audio_path) as clip:
-            return float(clip.duration) if clip.duration else None
-    except Exception:
-        try:
-            # Fallback for MoviePy v1 style
-            from moviepy.editor import AudioFileClip as EditorAudioFileClip  # type: ignore
-            with EditorAudioFileClip(audio_path) as clip:
-                return float(clip.duration) if clip.duration else None
-        except Exception:
-            return None
-
-def transcribe_with_progress(model_obj, audio_path: str, language: str, description: str):
-    """
-    Display a progress bar based on wall-clock time vs. media duration
-    while Whisper is running. This is an estimate (there is no callback API).
-    """
-    total_seconds = _get_audio_duration_seconds(audio_path)
-    stop_event = threading.Event()
-    pbar: tqdm | None = None
-
-    def _run_progress_bar():
-        if total_seconds is None or total_seconds <= 0:
-            return  # no progress bar if we can't estimate duration
-        nonlocal pbar
-        pbar = tqdm(total=int(total_seconds), desc=description, unit="s")
-        start_time = time.time()
-        while not stop_event.is_set():
-            elapsed = time.time() - start_time
-            # Clamp to total
-            current = int(min(elapsed, pbar.total))
-            if current != pbar.n:
-                pbar.n = current
-                pbar.refresh()
-            time.sleep(0.25)
-        # complete the bar
-        pbar.n = pbar.total
-        pbar.refresh()
-        pbar.close()
-
-    thread: threading.Thread | None = None
-    if total_seconds and total_seconds > 0:
-        thread = threading.Thread(target=_run_progress_bar, daemon=True)
-        thread.start()
-
-    try:
-        return model_obj.transcribe(audio_path, language=language, fp16=False)
-    finally:
-        stop_event.set()
-        if thread:
-            thread.join(timeout=0.5)
-
-def _cleanup_with_ollama(text: str) -> str:
-    """
-    Clean transcription text using the local Ollama server.
-    """
-    payload = {
-        "model": cleanup_model_name,
-        "prompt": f"{cleanup_prompt.strip()}\n\n{text.strip()}",
-        "stream": False,
-        "options": {"num_gpu": 1 if device == "cuda" else 0},
-    }
-    data = json.dumps(payload).encode("utf-8")
-    request = urllib.request.Request(
-        "http://localhost:11434/api/generate",
-        data=data,
-        headers={"Content-Type": "application/json"},
-        method="POST",
-    )
-    try:
-        with urllib.request.urlopen(request, timeout=600) as response:
-            raw = response.read().decode("utf-8")
-    except urllib.error.HTTPError as exc:
-        body = exc.read().decode("utf-8") if exc.fp else ""
-        if exc.code == 401 and body:
-            try:
-                parsed_body = json.loads(body)
-                signin_url = parsed_body.get("signin_url")
-                error_label = parsed_body.get("error")
-                if signin_url:
-                    raise RuntimeError(
-                        "Ollama rejected the request as unauthorized. "
-                        f"Sign in here to enable local access: {signin_url}"
-                    ) from exc
-                if error_label:
-                    raise RuntimeError(f"Ollama unauthorized: {error_label}") from exc
-            except json.JSONDecodeError:
-                pass
-        raise RuntimeError(f"Ollama HTTP error {exc.code}: {body}") from exc
-    except urllib.error.URLError as exc:
-        raise RuntimeError(
-            "Failed to reach Ollama at http://localhost:11434. "
-            "Ensure Ollama is running and the model is pulled."
-        ) from exc
-
-    parsed = json.loads(raw)
-    cleaned = parsed.get("response", "")
-    if not isinstance(cleaned, str) or not cleaned.strip():
-        raise RuntimeError("Ollama returned an empty cleanup response.")
-    return cleaned.strip()
-
-if args.type == "video":
-    # Process each video file in the videos folder
-    for media_file in os.listdir(VIDEOS_PATH):
-        media_path = os.path.join(VIDEOS_PATH, media_file)
-        if not os.path.isfile(media_path):
-            continue
-
-        extension = os.path.splitext(media_file)[1].lower()
-        if extension not in VIDEO_EXTENSIONS:
-            continue
-
-        print(f"Processing video {media_file}...")
-        audio_output_path = os.path.join(
-            AUDIOS_PATH, os.path.splitext(media_file)[0] + ".mp3"
-        )
-        print(f"Extracting audio from {media_file}...")
-        with VideoFileClip(media_path) as video:
-            if video.audio is None:
-                print(f"No audio track found in {media_file}. Skipping file.")
-                continue
-            video.audio.write_audiofile(audio_output_path)
-        print("Audio extracted.")
-
-        print(f"Transcribing audio for {media_file}...")
-        result = transcribe_with_progress(
-            whisper_model,
-            audio_output_path,
-            language,
-            f"Transcribing {media_file}",
-        )
-        print("Transcription complete.")
-
-        transcript_filename = os.path.splitext(media_file)[0] + ".txt"
-        with open(os.path.join(TRANSCRIPTS_FOLDER, transcript_filename), "w", encoding='utf-8') as f:
-            f.write(result['text'])
-
-        print(f"Transcript for {media_file} saved to {transcript_filename}")
-
-        if args.cleanup:
-            print(f"Cleaning transcript for {media_file}...")
-            cleaned_filename = os.path.splitext(media_file)[0] + "_clean.txt"
-            try:
-                cleaned_text = _cleanup_with_ollama(result['text'])
-                with open(
-                    os.path.join(TRANSCRIPTS_FOLDER, cleaned_filename),
-                    "w",
-                    encoding='utf-8',
-                ) as f:
-                    f.write(cleaned_text)
-                print(f"Cleaned transcript saved to {cleaned_filename}")
-            except Exception as exc:
-                print(f"Cleanup failed for {media_file}: {exc}")
-
-elif args.type == "audio":
-    # Process each audio file in the audios folder
-    for media_file in os.listdir(AUDIOS_PATH):
-        media_path = os.path.join(AUDIOS_PATH, media_file)
-        if not os.path.isfile(media_path):
-            continue
-
-        extension = os.path.splitext(media_file)[1].lower()
-        if extension not in AUDIO_EXTENSIONS:
-            continue
-
-        print(f"Processing audio {media_file}...")
-        print(f"Transcribing audio for {media_file}...")
-        result = transcribe_with_progress(
-            whisper_model,
-            media_path,
-            language,
-            f"Transcribing {media_file}",
-        )
-        print("Transcription complete.")
-
-        transcript_filename = os.path.splitext(media_file)[0] + ".txt"
-        with open(os.path.join(TRANSCRIPTS_FOLDER, transcript_filename), "w", encoding='utf-8') as f:
-            f.write(result['text'])
-
-        print(f"Transcript for {media_file} saved to {transcript_filename}")
-
-        if args.cleanup:
-            print(f"Cleaning transcript for {media_file}...")
-            cleaned_filename = os.path.splitext(media_file)[0] + "_clean.txt"
-            try:
-                cleaned_text = _cleanup_with_ollama(result['text'])
-                with open(
-                    os.path.join(TRANSCRIPTS_FOLDER, cleaned_filename),
-                    "w",
-                    encoding='utf-8',
-                ) as f:
-                    f.write(cleaned_text)
-                print(f"Cleaned transcript saved to {cleaned_filename}")
-            except Exception as exc:
-                print(f"Cleanup failed for {media_file}: {exc}")
-
-print("All processing completed.")
+    except Exception as exc:  # pragma: no cover - defensive
+        logging.exception("Unexpected error: %s", exc)
+        sys.exit(1)
