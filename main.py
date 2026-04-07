@@ -49,18 +49,18 @@ def orchestrate() -> None:
     ensure_directories([audios_path, transcripts_folder], logger)
     ensure_ffmpeg_available(dependencies["ffmpeg_executable"], logger)
 
+    args = parse_cli_args(videos_path, audios_path, cleaned_suffix, transcript_extension)
+    logger.info("CLI arguments parsed: type=%s, language=%s, cleanup=%s", args.type, args.language, args.cleanup)
+
     params = load_yaml_file(params_path)
     prompts = load_yaml_file(prompts_path)
 
-    language = params["language"]
+    language = args.language
     transcription_model_name = params["transcription_model"]
     cleanup_model_name = params["cleanup_model"]
     cleanup_prompt = prompts["cleanup_prompt"]
     if not isinstance(cleanup_prompt, str) or not cleanup_prompt.strip():
         raise ProcessingError(f"{prompts_path} must define a non-empty cleanup_prompt")
-
-    args = parse_cli_args(videos_path, audios_path, cleaned_suffix, transcript_extension)
-    logger.info("CLI arguments parsed: type=%s, cleanup=%s", args.type, args.cleanup)
 
     device = select_device(logger)
     logger.info("Using device: %s", device)

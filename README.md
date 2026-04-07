@@ -5,10 +5,11 @@ This project transcribes media using a locally hosted Whisper model, then option
 ## Features
 
 - CLI flag `--type` selects whether to process items from `videos/` or `audios/`.
+- CLI flag `--language` sets the Whisper transcription language (default: `ru`).
 - Automatic audio extraction for supported video formats (`.mp4`, `.mov`, `.avi`, `.mkv`, `.webm`).
 - Optional cleanup step via local Ollama using `cleanup_model` and `cleanup_prompt`.
 - Progress indication during transcription (duration-based estimate).
-- Language and model configuration via `configurations/params.yaml`.
+- Model configuration via `configurations/params.yaml`.
 - Runtime paths and processing options via `configurations/general_config.yaml`.
 - Structured codebase with a root orchestrator (`main.py`) and domain modules in `src/`.
 
@@ -22,7 +23,7 @@ This project transcribes media using a locally hosted Whisper model, then option
 ├── logs/                       # Runtime logs
 ├── configurations/
 │   ├── general_config.yaml     # Runtime paths, extensions, logging, and service settings
-│   ├── params.yaml             # Whisper language/model settings
+│   ├── params.yaml             # Whisper model and cleanup settings
 │   └── prompts.yaml            # Cleanup prompt for Ollama
 ├── src/
 │   ├── cleanup.py              # Ollama cleanup logic
@@ -102,7 +103,6 @@ pip install -r requirements.txt
 Edit `configurations/params.yaml` to choose the Whisper transcription model and cleanup model:
 
 ```yaml
-language: ru    # e.g. 'en', 'ru'
 transcription_model: base     # tiny | base | small | medium | large-v3
 cleanup_model: llama3.1:8b    # Ollama model name
 ```
@@ -132,15 +132,17 @@ By default, logs are written to `logs/transcriber.log`.
 1. Place video files in `videos/`.
 2. Run:
    ```bash
-   python main.py --type video
+   python main.py --type video --language ru
    ```
 
 ### Process Audio
 1. Place audio files in `audios/`.
 2. Run:
    ```bash
-   python main.py --type audio
+   python main.py --type audio --language en
    ```
+
+`--language` defaults to `ru` and can be omitted when transcribing Russian.
 
 ### Optional Cleanup
 

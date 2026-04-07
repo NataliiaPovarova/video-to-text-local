@@ -32,6 +32,11 @@ def parse_cli_args(
         ),
     )
     parser.add_argument(
+        "--language",
+        default="ru",
+        help="Language code for Whisper transcription (default: %(default)s)",
+    )
+    parser.add_argument(
         "--cleanup",
         action="store_true",
         help=(
