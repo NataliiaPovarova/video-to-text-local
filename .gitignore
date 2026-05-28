@@ -23,3 +23,5 @@ CLAUDE.md
 
 logs/
 pycache/
+docs/
+src/__pycache__/
