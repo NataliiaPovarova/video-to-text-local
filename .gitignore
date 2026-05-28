@@ -22,4 +22,7 @@ training_data/
 CLAUDE.md
 
 logs/
-pycache/
+__pycache__/
+docs/
+.pytest_cache/
+*.pyc

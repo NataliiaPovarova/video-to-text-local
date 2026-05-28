@@ -11,3 +11,5 @@ tqdm
 # Dependencies with version constraints to avoid conflicts
 numpy<2.3
 pillow<12.0
+# Development / testing
+pytest
