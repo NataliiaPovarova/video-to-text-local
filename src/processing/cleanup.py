@@ -4,7 +4,7 @@ import socket
 import urllib.error
 import urllib.request
 
-from .utils import ProcessingError
+from src.utils.errors import ProcessingError
 
 
 def cleanup_with_ollama(
@@ -17,6 +17,7 @@ def cleanup_with_ollama(
     ollama_request_content_type: str,
     logger: logging.Logger,
 ) -> str:
+    """Send text to a local Ollama instance for cleanup/formatting."""
     payload = {
         "model": cleanup_model_name,
         "prompt": f"{cleanup_prompt.strip()}\n\n{text.strip()}",

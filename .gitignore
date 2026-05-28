@@ -22,6 +22,7 @@ training_data/
 CLAUDE.md
 
 logs/
-pycache/
+__pycache__/
 docs/
-src/__pycache__/
+.pytest_cache/
+*.pyc

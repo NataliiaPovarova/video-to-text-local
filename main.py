@@ -1,10 +1,21 @@
 import functools
 import logging
 import sys
+from pathlib import Path
+
 import whisper
 
-from src.cleanup import cleanup_with_ollama
-from src.file_preprocessing import process_audio_files, process_video_files
+from src.ingestion import discover_media_files
+from src.models import PipelineContext
+from src.pipeline import (
+    AudioIngestionStep,
+    CleanupStep,
+    OutputStep,
+    PipelineOrchestrator,
+    TranscriptionStep,
+    VideoIngestionStep,
+)
+from src.processing import cleanup_with_ollama
 from src.utils import (
     ProcessingError,
     ensure_directories,
@@ -50,7 +61,10 @@ def orchestrate() -> None:
     ensure_ffmpeg_available(dependencies["ffmpeg_executable"], logger)
 
     args = parse_cli_args(videos_path, audios_path, cleaned_suffix, transcript_extension)
-    logger.info("CLI arguments parsed: type=%s, language=%s, cleanup=%s", args.type, args.language, args.cleanup)
+    logger.info(
+        "CLI arguments parsed: type=%s, language=%s, cleanup=%s",
+        args.type, args.language, args.cleanup,
+    )
 
     params = load_yaml_file(params_path)
     prompts = load_yaml_file(prompts_path)
@@ -69,7 +83,32 @@ def orchestrate() -> None:
     whisper_model = whisper.load_model(transcription_model_name, device=device)
     logger.info("Whisper model loaded.")
 
-    cleanup_func = None
+    # --- Build pipeline steps ---
+    transcripts_path = Path(transcripts_folder)
+    audios_path_obj = Path(audios_path)
+
+    if args.type == "video":
+        ingestion_step = VideoIngestionStep(audios_path_obj, extracted_audio_extension)
+        source_folder = videos_path
+        extensions = tuple(general_config["extensions"]["video"])
+    else:
+        ingestion_step = AudioIngestionStep()
+        source_folder = audios_path
+        extensions = tuple(general_config["extensions"]["audio"])
+
+    transcription_step = TranscriptionStep(
+        whisper_model=whisper_model,
+        progress_update_interval=processing["progress_update_interval_seconds"],
+    )
+
+    output_step = OutputStep(
+        transcripts_folder=transcripts_path,
+        transcript_extension=transcript_extension,
+        cleaned_suffix=cleaned_suffix,
+    )
+
+    steps = [ingestion_step, transcription_step]
+
     if args.cleanup:
         cleanup_func = functools.partial(
             cleanup_with_ollama,
@@ -81,38 +120,24 @@ def orchestrate() -> None:
             ollama_request_content_type=ollama["request_content_type"],
             logger=logger,
         )
+        steps.append(CleanupStep(cleanup_func))
         logger.info("Cleanup mode is enabled with model: %s", cleanup_model_name)
 
-    if args.type == "video":
-        process_video_files(
-            videos_path=videos_path,
-            audios_path=audios_path,
-            transcripts_folder=transcripts_folder,
-            video_extensions=tuple(general_config["extensions"]["video"]),
-            transcript_extension=transcript_extension,
-            cleaned_suffix=cleaned_suffix,
-            extracted_audio_extension=extracted_audio_extension,
-            whisper_model=whisper_model,
+    steps.append(output_step)
+
+    pipeline = PipelineOrchestrator(steps=steps, logger=logger)
+
+    # --- Discover and process files ---
+    media_files = discover_media_files(source_folder, extensions)
+    logger.info("Found %d supported files in %s.", len(media_files), source_folder)
+
+    for filename, file_path in media_files:
+        context = PipelineContext(
+            source_path=file_path,
+            input_type=args.type,
             language=language,
-            enable_cleanup=args.cleanup,
-            cleanup_func=cleanup_func,
-            progress_update_interval_seconds=processing["progress_update_interval_seconds"],
-            logger=logger,
         )
-    else:
-        process_audio_files(
-            audios_path=audios_path,
-            transcripts_folder=transcripts_folder,
-            audio_extensions=tuple(general_config["extensions"]["audio"]),
-            transcript_extension=transcript_extension,
-            cleaned_suffix=cleaned_suffix,
-            whisper_model=whisper_model,
-            language=language,
-            enable_cleanup=args.cleanup,
-            cleanup_func=cleanup_func,
-            progress_update_interval_seconds=processing["progress_update_interval_seconds"],
-            logger=logger,
-        )
+        pipeline.run(context)
 
     logger.info("All processing completed.")
 
@@ -123,6 +148,6 @@ if __name__ == "__main__":
     except ProcessingError as exc:
         logging.error("Processing failed: %s", exc)
         sys.exit(1)
-    except Exception as exc:  # pragma: no cover - defensive
+    except Exception as exc:
         logging.exception("Unexpected error: %s", exc)
         sys.exit(1)
