@@ -25,9 +25,14 @@ class TestTranscriptSegment:
         assert seg.end_time == 3.2
 
     def test_with_speaker(self):
-        speaker = Speaker(id="spk_1", label="Alice")
+        speaker = Speaker(id="spk_1", label="Alice", is_key=True, total_speaking_seconds=12.5)
         seg = TranscriptSegment(text="test", speaker=speaker)
         assert seg.speaker.label == "Alice"
+        assert seg.speaker.is_key is True
+
+    def test_confidence_details_default(self):
+        seg = TranscriptSegment(text="test")
+        assert seg.confidence_details == {}
 
 
 class TestTranscriptDocument:

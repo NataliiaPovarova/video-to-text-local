@@ -7,6 +7,7 @@ paths:
 files:
   params: "configurations/params.yaml"
   prompts: "configurations/prompts.yaml"
+  diarization: "configurations/diarization.yaml"
 
 extensions:
   video:

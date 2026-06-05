@@ -8,6 +8,7 @@ This project transcribes media using a locally hosted Whisper model, then option
 - CLI flag `--language` sets the Whisper transcription language (default: `ru`).
 - Automatic audio extraction for supported video formats (`.mp4`, `.mov`, `.avi`, `.mkv`, `.webm`).
 - Optional cleanup step via local Ollama using `cleanup_model` and `cleanup_prompt`.
+- Optional speaker diarization via `pyannote.audio` (`--diarize`) with speaker labels in transcript output.
 - Progress indication during transcription (duration-based estimate).
 - Model configuration via `configurations/params.yaml`.
 - Runtime paths and processing options via `configurations/general_config.yaml`.
@@ -151,6 +152,17 @@ Add `--cleanup` to generate cleaned transcripts via Ollama:
 ```bash
 python main.py --type video --cleanup
 ```
+
+### Optional Speaker Diarization
+
+Краткий запуск:
+
+```bash
+export HF_TOKEN=hf_...
+python main.py --type audio --diarize
+```
+
+**Подробная инструкция** (установка, HF token, конфиг, CLI, Docker, troubleshooting): [docs/diarization.md](docs/diarization.md).
 
 **Supported extensions:**
 - Videos: `.mp4`, `.mov`, `.avi`, `.mkv`, `.webm`
