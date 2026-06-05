@@ -1,5 +1,8 @@
 **venv/
-**.env
+# Local environment variables (per-developer secrets). Never commit.
+.env
+# But keep the committed template.
+!.env.example
 .cursor/
 videos/
 audios/
@@ -26,3 +29,5 @@ __pycache__/
 docs/
 .pytest_cache/
 *.pyc
+.cursor\rules\openmemory.mdc
+CLAUDE.md

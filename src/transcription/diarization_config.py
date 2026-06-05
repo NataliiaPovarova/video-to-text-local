@@ -26,9 +26,14 @@ class DiarizationConfig:
         if not token:
             raise ProcessingError(
                 f"Diarization requires HuggingFace token in environment variable "
-                f"'{self.hf_token_env}'. Create a token at https://huggingface.co/settings/tokens "
-                "and accept the user conditions for pyannote/segmentation-3.0 and "
-                "pyannote/speaker-diarization-3.1."
+                f"'{self.hf_token_env}'. Create a token at "
+                "https://huggingface.co/settings/tokens and accept the user conditions "
+                "for every gated model used by pyannote.audio: "
+                "pyannote/segmentation-3.0, pyannote/speaker-diarization-3.1, and "
+                "pyannote/speaker-diarization-community-1 "
+                "(the last one is required by pyannote.audio >= 4.0, which loads PLDA "
+                "weights from that repository even when the configured model is "
+                "speaker-diarization-3.1)."
             )
         return token
 
