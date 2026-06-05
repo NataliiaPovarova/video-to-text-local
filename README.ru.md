@@ -176,8 +176,14 @@ python main.py --type video --cleanup
    ```
    HF_TOKEN=hf_xxx_ваш_персональный_токен
    ```
-   Создайте токен на https://huggingface.co/settings/tokens и примите пользовательские условия для
-   `pyannote/segmentation-3.0` и `pyannote/speaker-diarization-3.1`.
+   Создайте токен на https://huggingface.co/settings/tokens и примите пользовательские условия
+   для каждой gated-модели, используемой `pyannote.audio` (для каждой нужно нажать «Agree and
+   access» на отдельной странице HF):
+   - `pyannote/segmentation-3.0`
+   - `pyannote/speaker-diarization-3.1`
+   - `pyannote/speaker-diarization-community-1` *(требуется для `pyannote.audio >= 4.0`,
+     поскольку оттуда подгружаются PLDA-веса даже при использовании модели
+     `speaker-diarization-3.1`)*.
 
 **Запуск:**
 

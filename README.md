@@ -177,7 +177,12 @@ Diarization uses `pyannote.audio` and requires a HuggingFace access token. The p
    HF_TOKEN=hf_xxx_your_personal_token
    ```
    Create a token at https://huggingface.co/settings/tokens and accept the user conditions for
-   `pyannote/segmentation-3.0` and `pyannote/speaker-diarization-3.1`.
+   every gated model used by `pyannote.audio` (each one is a separate "Agree and access" page on HF):
+   - `pyannote/segmentation-3.0`
+   - `pyannote/speaker-diarization-3.1`
+   - `pyannote/speaker-diarization-community-1` *(required by `pyannote.audio >= 4.0`,
+     which loads PLDA weights from this repository even when the configured model is
+     `speaker-diarization-3.1`)*.
 
 **Run:**
 
