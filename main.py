@@ -3,6 +3,13 @@ import logging
 import sys
 from pathlib import Path
 
+from dotenv import load_dotenv
+
+# Load environment variables from the project's .env file before any module
+# reads os.environ. Existing OS-level variables take precedence (override=False
+# by default), so CI/CD and shell exports still win over a local .env.
+load_dotenv(dotenv_path=Path(__file__).resolve().parent / ".env")
+
 import whisper
 
 from src.ingestion import discover_media_files

@@ -1,6 +1,11 @@
+<!-- Language switcher -->
+**English** | [Русский](README.ru.md)
+
 # Video / Audio Transcription with Local Whisper
 
 This project transcribes media using a locally hosted Whisper model, then optionally cleans the transcript with a local Ollama model. Videos have their audio track extracted first, while audio files (`.mp3`, `.m4a`) are sent straight to transcription. Outputs are saved to `transcripts/`, and execution logs are written to `logs/`.
+
+> **Maintainers note:** when editing this file, please keep [`README.ru.md`](README.ru.md) in sync.
 
 ## Features
 
@@ -155,14 +160,34 @@ python main.py --type video --cleanup
 
 ### Optional Speaker Diarization
 
-Краткий запуск:
+Diarization uses `pyannote.audio` and requires a HuggingFace access token. The project loads secrets from a local `.env` file at startup (via `python-dotenv`).
+
+**One-time setup:**
+
+1. Copy the template to a real `.env` file (kept out of git):
+   ```bash
+   # Windows PowerShell
+   Copy-Item .env.example .env
+
+   # macOS / Linux
+   cp .env.example .env
+   ```
+2. Open `.env` and set your token:
+   ```
+   HF_TOKEN=hf_xxx_your_personal_token
+   ```
+   Create a token at https://huggingface.co/settings/tokens and accept the user conditions for
+   `pyannote/segmentation-3.0` and `pyannote/speaker-diarization-3.1`.
+
+**Run:**
 
 ```bash
-export HF_TOKEN=hf_...
 python main.py --type audio --diarize
 ```
 
-**Подробная инструкция** (установка, HF token, конфиг, CLI, Docker, troubleshooting): [docs/diarization.md](docs/diarization.md).
+> Each developer must use their own personal HF token. The `.env` file is gitignored — never commit it. A shell-exported `HF_TOKEN` (or one set at the OS level) still takes precedence over the `.env`, which is useful for CI/CD.
+
+**Detailed guide** (installation, HF token, config, CLI, Docker, troubleshooting): [docs/diarization.md](docs/diarization.md).
 
 **Supported extensions:**
 - Videos: `.mp4`, `.mov`, `.avi`, `.mkv`, `.webm`

@@ -11,6 +11,8 @@
 - Runtime settings are centralized in `configurations/general_config.yaml`.
 - Model settings are loaded from `configurations/params.yaml`; language is a CLI argument (`--language`, default `ru`).
 - Cleanup prompt is loaded from `configurations/prompts.yaml`.
+- Secrets (e.g. `HF_TOKEN`) live in a local `.env` at the project root, loaded by `python-dotenv` at the top of `main.py` via `load_dotenv(dotenv_path=Path(__file__).resolve().parent / ".env")`. `.env` is gitignored; `.env.example` is the committed template. Existing OS env vars override the `.env`.
+- Documentation is bilingual and split across two files at the project root: `README.md` (English, default — what GitHub renders) and `README.ru.md` (Russian). Each has a language switcher at the top linking to the other. When editing one, update the other to keep them in sync.
 
 ## Project Structure
 ```
@@ -67,6 +69,7 @@ configurations/              # YAML configuration files
 
 ## Patterns
 - **Configuration-first**: move environment-specific constants out of Python code and read from YAML.
+- **Secrets via `.env`**: per-developer secrets (tokens, keys) loaded from `.env` at startup; never committed. Template lives in `.env.example`. Code reads them via `os.environ.get(...)` so existing OS env vars and CI/CD still take precedence.
 - **Modular pipeline**: each processing stage is a self-contained `PipelineStep` that can be added/removed/reordered.
 - **Structured data flow**: `PipelineContext` → steps enrich it → final output. No loose variables passed between stages.
 - **Local-first**: all models run locally by default (Whisper + Ollama). Cloud APIs to be added as alternative backends in future phases.
