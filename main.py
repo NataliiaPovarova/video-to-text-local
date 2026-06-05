@@ -10,11 +10,14 @@ from src.models import PipelineContext
 from src.pipeline import (
     AudioIngestionStep,
     CleanupStep,
+    DiarizationStep,
     OutputStep,
     PipelineOrchestrator,
     TranscriptionStep,
     VideoIngestionStep,
 )
+from src.transcription.diarization_config import load_diarization_config
+from src.transcription.diarizer import create_diarization_backend
 from src.processing import cleanup_with_ollama
 from src.utils import (
     ProcessingError,
@@ -53,6 +56,7 @@ def orchestrate() -> None:
     transcripts_folder = paths["transcripts"]
     params_path = files["params"]
     prompts_path = files["prompts"]
+    diarization_path = files["diarization"]
     transcript_extension = output["transcript_extension"]
     cleaned_suffix = output["cleaned_suffix"]
     extracted_audio_extension = output["extracted_audio_extension"]
@@ -62,8 +66,12 @@ def orchestrate() -> None:
 
     args = parse_cli_args(videos_path, audios_path, cleaned_suffix, transcript_extension)
     logger.info(
-        "CLI arguments parsed: type=%s, language=%s, cleanup=%s",
-        args.type, args.language, args.cleanup,
+        "CLI arguments parsed: type=%s, language=%s, cleanup=%s, diarize=%s, num_speakers=%s",
+        args.type,
+        args.language,
+        args.cleanup,
+        args.diarize,
+        args.num_speakers,
     )
 
     params = load_yaml_file(params_path)
@@ -101,6 +109,12 @@ def orchestrate() -> None:
         progress_update_interval=processing["progress_update_interval_seconds"],
     )
 
+    diarization_config = load_diarization_config(diarization_path)
+    if args.no_diarize:
+        diarization_config.enabled = False
+    elif args.diarize:
+        diarization_config.enabled = True
+
     output_step = OutputStep(
         transcripts_folder=transcripts_path,
         transcript_extension=transcript_extension,
@@ -108,6 +122,24 @@ def orchestrate() -> None:
     )
 
     steps = [ingestion_step, transcription_step]
+
+    if diarization_config.enabled:
+        diarization_backend = create_diarization_backend(
+            diarization_config,
+            device,
+            logger,
+        )
+        diarization_work_dir = Path(audios_path) / ".diarization_cache"
+        steps.append(
+            DiarizationStep(
+                backend=diarization_backend,
+                config=diarization_config,
+                work_dir=diarization_work_dir,
+                ffmpeg_executable=dependencies["ffmpeg_executable"],
+                num_speakers_override=args.num_speakers,
+            )
+        )
+        logger.info("Diarization mode is enabled (backend=%s)", diarization_config.backend)
 
     if args.cleanup:
         cleanup_func = functools.partial(

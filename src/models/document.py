@@ -11,6 +11,7 @@ class PipelineState(str, Enum):
     PENDING = "pending"
     INGESTED = "ingested"
     TRANSCRIBED = "transcribed"
+    DIARIZED = "diarized"
     PROCESSED = "processed"
     EXPORTED = "exported"
     FAILED = "failed"
@@ -20,6 +21,8 @@ class PipelineState(str, Enum):
 class Speaker:
     id: str
     label: str | None = None
+    is_key: bool = False
+    total_speaking_seconds: float = 0.0
 
 
 @dataclass
@@ -32,6 +35,7 @@ class TranscriptSegment:
     speaker: Speaker | None = None
     confidence: float = 1.0
     is_unclear: bool = False
+    confidence_details: dict = field(default_factory=dict)
 
 
 @dataclass

@@ -9,21 +9,23 @@ from tqdm import tqdm
 
 from src.models import PipelineState, TranscriptDocument, TranscriptSegment
 
+try:
+    from moviepy import AudioFileClip
+except ImportError:
+    try:
+        from moviepy.editor import AudioFileClip  # type: ignore[no-redef]
+    except ImportError:
+        AudioFileClip = None  # type: ignore[misc, assignment]
+
 
 def _get_audio_duration_seconds(audio_path: str) -> float | None:
+    if AudioFileClip is None:
+        return None
     try:
-        from moviepy import AudioFileClip
-
         with AudioFileClip(audio_path) as clip:
             return float(clip.duration) if clip.duration else None
     except Exception:
-        try:
-            from moviepy.editor import AudioFileClip as EditorAudioFileClip
-
-            with EditorAudioFileClip(audio_path) as clip:
-                return float(clip.duration) if clip.duration else None
-        except Exception:
-            return None
+        return None
 
 
 def transcribe_audio(

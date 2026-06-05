@@ -1,0 +1,17 @@
+enabled: false
+backend: pyannote
+model: pyannote/speaker-diarization-3.1
+hf_token_env: HF_TOKEN
+
+speakers:
+  num_speakers: null
+  min_speakers: 2
+  max_speakers: 10
+  key_speakers: 3
+
+alignment:
+  overlap_threshold: 0.2
+  min_segment_duration: 0.3
+
+processing:
+  progress_update_interval_seconds: 0.25

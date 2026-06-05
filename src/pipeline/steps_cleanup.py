@@ -3,7 +3,8 @@ from __future__ import annotations
 import logging
 from collections.abc import Callable
 
-from src.models import PipelineContext
+from src.models import PipelineContext, PipelineState
+from src.output.formatter import format_document_with_speakers
 
 from .steps import PipelineStep
 
@@ -19,7 +20,10 @@ class CleanupStep(PipelineStep):
             context.fail("No document available for cleanup")
             return context
 
-        full_text = context.document.full_text
+        if context.document.pipeline_state == PipelineState.DIARIZED:
+            full_text = format_document_with_speakers(context.document)
+        else:
+            full_text = context.document.full_text
         if not full_text.strip():
             logger.warning("Empty transcript, skipping cleanup for %s", context.source_path.name)
             return context
