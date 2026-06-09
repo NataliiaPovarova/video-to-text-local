@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import re
 from dataclasses import dataclass
 from pathlib import Path
@@ -40,4 +41,5 @@ class DiarizationBackend(Protocol):
         num_speakers: int | None = None,
         min_speakers: int | None = None,
         max_speakers: int | None = None,
+        logger: logging.Logger | None = None,
     ) -> list[DiarizationTurn]: ...
