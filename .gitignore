@@ -31,3 +31,5 @@ docs/
 *.pyc
 .cursor\rules\openmemory.mdc
 CLAUDE.md
+.cursor\rules\openmemory.mdc
+CLAUDE.md

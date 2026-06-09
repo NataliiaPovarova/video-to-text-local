@@ -57,6 +57,26 @@ The script relies on `ffmpeg` to decode audio. Ensure it is on your PATH.
   brew install ffmpeg
   ```
 
+> **Note on diarization:** `pyannote.audio >= 4.0` pulls `torchcodec` as a
+> transitive dependency, and `torchcodec`'s native extension is fragile on
+> Windows (FFmpeg shared-library ABI mismatches across minor versions, plus
+> PyTorch C++ ABI drift). To avoid that whole class of failures, this
+> project's pyannote diarization backend loads audio in-memory through
+> `whisper.audio.load_audio` (which shells out to your `ffmpeg.exe`) and
+> passes pyannote a `{"waveform", "sample_rate"}` mapping, bypassing
+> `torchcodec` entirely. A `torchcodec is not installed correctly` warning
+> from pyannote at startup is therefore expected and harmless — the static
+> `ffmpeg.exe` you already have is sufficient.
+>
+> On Windows, the same broken import can also trigger a modal "the
+> procedure entry point ... could not be located in the dynamic link
+> library `libtorchcodec_core8.dll`" dialog from the Windows DLL loader,
+> which would otherwise block batch runs until you click *OK*. `main.py`
+> calls `SetErrorMode(SEM_FAILCRITICALERRORS)` at the very top (before any
+> import that could pull in `torch` / `pyannote.audio` / `torchcodec`) to
+> suppress that popup for the process. The text warning on stderr is
+> preserved so the failure remains diagnosable.
+
 ### 2. Prerequisites: Ollama
 
 The cleanup step runs locally via Ollama. Install it and pull your cleanup model:

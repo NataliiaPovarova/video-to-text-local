@@ -1,6 +1,22 @@
+import sys
+
+if sys.platform == "win32":
+    # Suppress Windows DLL loader modal dialogs (e.g. "the procedure entry
+    # point ... could not be located in the dynamic link library ...") so
+    # benign import-time failures inside transitive dependencies such as
+    # torchcodec do not interrupt batch runs with a popup that requires a
+    # click. The failures still propagate as Python exceptions and are
+    # surfaced via the pyannote stderr warning; only the modal UI is
+    # suppressed. SEM_FAILCRITICALERRORS = 0x0001.
+    # This MUST run before any import that may load torch / pyannote.audio /
+    # torchcodec (so before `whisper`, `src.pipeline`, etc.), otherwise the
+    # dialog has already fired by the time we get here.
+    import ctypes
+
+    ctypes.windll.kernel32.SetErrorMode(0x0001)
+
 import functools
 import logging
-import sys
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -91,6 +107,14 @@ def orchestrate() -> None:
     if not isinstance(cleanup_prompt, str) or not cleanup_prompt.strip():
         raise ProcessingError(f"{prompts_path} must define a non-empty cleanup_prompt")
 
+    # Resolve diarization config early so any config-level issues surface
+    # before we pay for Whisper model loading or transcription.
+    diarization_config = load_diarization_config(diarization_path)
+    if args.no_diarize:
+        diarization_config.enabled = False
+    elif args.diarize:
+        diarization_config.enabled = True
+
     device = select_device(logger)
     logger.info("Using device: %s", device)
 
@@ -115,12 +139,6 @@ def orchestrate() -> None:
         whisper_model=whisper_model,
         progress_update_interval=processing["progress_update_interval_seconds"],
     )
-
-    diarization_config = load_diarization_config(diarization_path)
-    if args.no_diarize:
-        diarization_config.enabled = False
-    elif args.diarize:
-        diarization_config.enabled = True
 
     output_step = OutputStep(
         transcripts_folder=transcripts_path,

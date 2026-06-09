@@ -4,8 +4,6 @@ import logging
 from contextlib import nullcontext
 from pathlib import Path
 
-from tqdm import tqdm
-
 from src.models import PipelineState, TranscriptDocument, TranscriptSegment
 from src.transcription.alignment import (
     assign_speakers_to_segments,
@@ -66,27 +64,35 @@ def diarize_document(
     if not document.segments:
         raise ProcessingError("Cannot diarize document with no transcript segments")
 
-    prep_dir = work_dir or audio_path.parent / ".diarization_cache"
-    with tqdm(desc=f"Preparing audio {audio_path.name}", total=1, unit="step", leave=False) as prep_bar:
-        prepared_audio = ensure_wav_16k_mono(
-            audio_path,
-            prep_dir,
-            ffmpeg_executable=ffmpeg_executable,
-            logger=logger,
-        )
-        prep_bar.update(1)
-
-    num_speakers = num_speakers_override if num_speakers_override is not None else config.num_speakers
-    min_speakers = None if num_speakers is not None else config.min_speakers
-    max_speakers = None if num_speakers is not None else config.max_speakers
-
-    duration = _get_audio_duration_seconds(str(prepared_audio))
+    # Compute source duration up-front so the prep step shows a real-time
+    # progress bar (ffmpeg decode of the source can take 30-60 s on first run
+    # for hour-long inputs; later runs hit the cached WAV and finish instantly).
+    duration = _get_audio_duration_seconds(str(audio_path))
     if duration and duration > 30 * 60:
         logger.warning(
             "Long audio (%.0f min): diarization may take significant time on CPU.",
             duration / 60,
         )
 
+    prep_dir = work_dir or audio_path.parent / ".diarization_cache"
+    with duration_progress_bar(
+        desc=f"Preparing audio {audio_path.name}",
+        duration_seconds=duration,
+        update_interval_seconds=config.progress_update_interval_seconds,
+    ):
+        prepared_audio = ensure_wav_16k_mono(
+            audio_path,
+            prep_dir,
+            ffmpeg_executable=ffmpeg_executable,
+            logger=logger,
+        )
+
+    num_speakers = num_speakers_override if num_speakers_override is not None else config.num_speakers
+    min_speakers = None if num_speakers is not None else config.min_speakers
+    max_speakers = None if num_speakers is not None else config.max_speakers
+
+    # Pyannote drives its own rich.progress bars through ProgressHook; other
+    # backends get the duration-based fallback bar.
     use_duration_fallback = backend.name != "pyannote"
     diarize_desc = f"Diarizing {audio_path.name}"
 
@@ -105,6 +111,7 @@ def diarize_document(
             num_speakers=num_speakers,
             min_speakers=min_speakers,
             max_speakers=max_speakers,
+            logger=logger,
         )
 
     segments, overlap_segments_count = assign_speakers_to_segments(

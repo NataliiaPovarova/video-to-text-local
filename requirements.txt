@@ -7,6 +7,13 @@ torchaudio
 moviepy
 PyYAML
 openai-whisper
+# Note: pyannote.audio>=4.0 pulls torchcodec as a transitive dependency for
+# audio I/O. On Windows torchcodec frequently fails to load (FFmpeg shared-lib
+# ABI mismatches), so the pyannote diarization backend in this project loads
+# audio in-memory via whisper.audio.load_audio (ffmpeg.exe subprocess) and
+# passes pyannote a {"waveform": Tensor, "sample_rate": int} mapping. That
+# bypasses torchcodec entirely -- a startup warning about torchcodec is benign.
+# See src/transcription/diarization_backends/pyannote_backend.py.
 pyannote.audio>=3.1.1
 tqdm
 python-dotenv>=1.0.0
