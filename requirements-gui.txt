@@ -1,0 +1,37 @@
+# GUI-only dependencies. Install AFTER requirements.txt, in the same venv.
+#
+# gradio 4.44.1 is the highest gradio installable on this project's Python 3.9
+# venv (gradio >=5 requires Python >=3.10). Its oauth.py does
+# `from huggingface_hub import HfFolder`, which huggingface_hub REMOVED in 1.0 --
+# so gradio 4.44.1 does NOT import against hub >=1.0 (ImportError: cannot import
+# name 'HfFolder'). We therefore pin hub <1.0. gradio's own metadata only says
+# huggingface-hub>=0.19.3, so the pin must live here.
+#
+# Verified in this venv: resolves to gradio 4.44.1 + huggingface_hub 0.36.2 and
+# leaves numpy 2.0.2 / torch 2.8.0 / openai-whisper 20250625 untouched (only
+# pillow 11.3.0 -> 10.4.0 and MarkupSafe 3.0.3 -> 2.1.5 move, both gradio-only
+# and within the repo's pillow<12.0 allowance). hub 0.36.2 still satisfies
+# pyannote.audio (>=0.13) and speechbrain (>=0.8); `import gradio`, `import
+# whisper`, and `import pyannote.audio` all succeed and the full pytest suite
+# stays green (86 passed).
+#
+# Do NOT remove the hub pin (re-breaks gradio's HfFolder import) and do NOT let
+# any pin move numpy below 2 -- change the gradio version instead. Re-run
+# `pip install --dry-run -r requirements-gui.txt` if you edit anything here.
+gradio>=4.44,<5
+huggingface_hub>=0.19.3,<1.0
+
+# Web stack (transitive via gradio) -- pinned defensively to the validated
+# minor lines. gradio 4.44.1 pulls fastapi/starlette/pydantic transitively.
+# pydantic 2.13 emits `additionalProperties: true` (a JSON-schema bool) which
+# gradio_client 1.3.0's schema walker cannot traverse, yielding HTTP 500 on "/"
+# at launch (surfaces as a misleading "localhost not accessible"). app.py
+# installs a runtime shim that tolerates this, but these caps additionally stop
+# a future `pip install` from resolving a newer, differently-broken web stack
+# the shim has never been tested against. The caps match what is installed and
+# verified green in this venv (pydantic 2.13.4, fastapi 0.128.8, starlette
+# 0.49.3) and allow only same-minor patch updates -- they do NOT force any
+# downgrade (confirmed via `pip install --dry-run`: nothing changes).
+pydantic>=2.0,<2.14
+fastapi<0.129
+starlette<0.50

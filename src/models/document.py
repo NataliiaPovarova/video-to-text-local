@@ -74,6 +74,7 @@ class PipelineContext:
     document: TranscriptDocument | None = None
     cleaned_text: str | None = None
     errors: list[str] = field(default_factory=list)
+    exception: Exception | None = None
 
     def fail(self, message: str) -> None:
         self.errors.append(message)

@@ -25,18 +25,30 @@ This project transcribes media using a locally hosted Whisper model, then option
 .
 ├── audios/                     # Input audio files or extracted audio
 ├── videos/                     # Input videos when running with --type video
-├── transcripts/                # Transcription outputs (created automatically)
+├── transcripts/                # Transcription outputs + GUI history (created automatically)
 ├── logs/                       # Runtime logs
 ├── configurations/
 │   ├── general_config.yaml     # Runtime paths, extensions, logging, and service settings
 │   ├── params.yaml             # Whisper model and cleanup settings
-│   └── prompts.yaml            # Cleanup prompt for Ollama
+│   ├── prompts.yaml            # Cleanup prompt for Ollama
+│   └── diarization.yaml        # Speaker-diarization backend settings
 ├── src/
-│   ├── cleanup.py              # Ollama cleanup logic
-│   ├── file_preprocessing.py   # Media discovery/extraction/transcript file operations
-│   └── utils.py                # Reusable utilities and shared error handling
+│   ├── service.py              # Shared CLI+GUI seam: transcribe_file() (one file, per-job params)
+│   ├── history.py              # GUI transcription-history index
+│   ├── ingestion/              # Media discovery and audio extraction from video
+│   ├── transcription/          # Whisper ASR + pyannote diarization (diarizer, backends, alignment, audio prep)
+│   ├── processing/             # Ollama cleanup
+│   ├── output/                 # Transcript formatting and file writing (txt, srt, vtt)
+│   ├── pipeline/               # Step orchestrator and pipeline steps (incl. diarization step)
+│   ├── models/                 # Dataclasses (transcript document, segments, context)
+│   └── utils/                  # CLI parsing, config, device, logging, errors, ffmpeg, naming, progress
+├── tests/                      # pytest suite
+├── main.py                     # CLI entrypoint
+├── app.py                      # Local web GUI (Gradio) entrypoint
+├── transcribe                  # Convenience wrapper script (macOS/Linux)
 ├── requirements.txt
-├── main.py                     # Root orchestrator entrypoint
+├── requirements-gui.txt        # Extra dependencies for the web GUI
+├── .env.example                # Template for secrets (HF_TOKEN); copy to .env
 ├── Dockerfile                  # Container image definition
 └── .dockerignore
 ```
@@ -210,9 +222,12 @@ Diarization uses `pyannote.audio` and requires a HuggingFace access token. The p
 python main.py --type audio --diarize
 ```
 
-> Each developer must use their own personal HF token. The `.env` file is gitignored — never commit it. A shell-exported `HF_TOKEN` (or one set at the OS level) still takes precedence over the `.env`, which is useful for CI/CD.
+Diarization flags:
+- `--diarize` — enable diarization (overrides `diarization.enabled` in config).
+- `--no-diarize` — disable it even if enabled in config (mutually exclusive with `--diarize`).
+- `--num-speakers N` — pin the exact number of speakers (optional; auto-detected otherwise).
 
-**Detailed guide** (installation, HF token, config, CLI, Docker, troubleshooting): [docs/diarization.md](docs/diarization.md).
+> Each developer must use their own personal HF token. The `.env` file is gitignored — never commit it. A shell-exported `HF_TOKEN` (or one set at the OS level) still takes precedence over the `.env`, which is useful for CI/CD.
 
 **Supported extensions:**
 - Videos: `.mp4`, `.mov`, `.avi`, `.mkv`, `.webm`
@@ -222,6 +237,34 @@ python main.py --type audio --diarize
 - Raw transcript: `<name>.txt`
 - Cleaned transcript: `<name>_clean.txt` (via Ollama, only with `--cleanup`)
 - Logs: `logs/transcriber.log`
+
+## Web GUI (local)
+
+A local, single-user web interface (Gradio) for uploading a file, picking model
++ language, transcribing with live progress, and browsing history.
+
+```bash
+pip install -r requirements-gui.txt   # one-time, after requirements.txt
+python app.py                          # opens http://127.0.0.1:7860
+```
+
+The GUI reuses the same engine as the CLI; transcripts and the history index
+live in `transcripts/`. It binds to `127.0.0.1` only (no network exposure).
+
+**GUI features:**
+
+- **Subtitle downloads** — every job also produces timestamped `.srt` and `.vtt`
+  files, downloadable next to the `.txt`.
+- **Optional cleanup** — tick *Clean up with Ollama* to post-process the
+  transcript with a local Ollama model. If Ollama is unavailable the job still
+  finishes and keeps the raw transcript (you get a warning, not a failure).
+- **Optional diarization** — tick *Speaker diarization* to label speakers. It
+  requires a HuggingFace token (`HF_TOKEN` in `.env`); without one the checkbox
+  is disabled with a hint. You can optionally pin the exact number of speakers.
+- **Batch upload** — drop in one or many files at once; they transcribe one at a
+  time (the queue serializes jobs) and each lands in History.
+- **History search** — filter the history table live by filename or date.
+- **Audio preview** — uploaded `.mp3`/`.m4a` files get an inline player.
 
 ## Run with Docker
 

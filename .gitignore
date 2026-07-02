@@ -20,16 +20,13 @@ venv_mac/
 node_modules/
 training_data/
 
-# OpenMemory - IDE/Assistant specific rules
-.cursor\rules\openmemory.mdc
-CLAUDE.md
-
 logs/
 __pycache__/
-docs/
 .pytest_cache/
 *.pyc
-.cursor\rules\openmemory.mdc
-CLAUDE.md
-.cursor\rules\openmemory.mdc
-CLAUDE.md
+
+# NOTE (groundwork D-003): `docs/` and `CLAUDE.md` are intentionally NOT ignored —
+# they are the project's documentation contract and must be committed/reviewed.
+# Removed here: the `docs/` ignore, three duplicate `CLAUDE.md` lines, and three
+# dead `.cursor\rules\openmemory.mdc` backslash paths git never matched
+# (`.cursor/` above already covers that directory).

@@ -15,7 +15,6 @@ if sys.platform == "win32":
 
     ctypes.windll.kernel32.SetErrorMode(0x0001)
 
-import functools
 import logging
 from pathlib import Path
 
@@ -26,29 +25,19 @@ from dotenv import load_dotenv
 # by default), so CI/CD and shell exports still win over a local .env.
 load_dotenv(dotenv_path=Path(__file__).resolve().parent / ".env")
 
-import whisper
+import whisper  # noqa: F401  (kept so model weights resolve identically; optional)
 
 from src.ingestion import discover_media_files
-from src.models import PipelineContext
-from src.pipeline import (
-    AudioIngestionStep,
-    CleanupStep,
-    DiarizationStep,
-    OutputStep,
-    PipelineOrchestrator,
-    TranscriptionStep,
-    VideoIngestionStep,
-)
+from src.service import transcribe_file
 from src.transcription.diarization_config import load_diarization_config
-from src.transcription.diarizer import create_diarization_backend
-from src.processing import cleanup_with_ollama
 from src.utils import (
+    MediaDecodeError,
     ProcessingError,
     ensure_directories,
     ensure_ffmpeg_available,
+    ensure_ffmpeg_on_path,
     load_yaml_file,
     parse_cli_args,
-    select_device,
     setup_logging,
 )
 
@@ -61,8 +50,6 @@ def orchestrate() -> None:
     paths = general_config["paths"]
     files = general_config["files"]
     output = general_config["output"]
-    ollama = general_config["ollama"]
-    processing = general_config["processing"]
     dependencies = general_config["dependencies"]
     logging_config = general_config["logging"]
 
@@ -77,126 +64,92 @@ def orchestrate() -> None:
     videos_path = paths["videos"]
     audios_path = paths["audios"]
     transcripts_folder = paths["transcripts"]
-    params_path = files["params"]
-    prompts_path = files["prompts"]
-    diarization_path = files["diarization"]
-    transcript_extension = output["transcript_extension"]
     cleaned_suffix = output["cleaned_suffix"]
-    extracted_audio_extension = output["extracted_audio_extension"]
+    transcript_extension = output["transcript_extension"]
 
     ensure_directories([audios_path, transcripts_folder], logger)
+    # Provision the bundled imageio-ffmpeg binary when no system ffmpeg exists,
+    # so the pre-flight check below passes without a separate install.
+    ensure_ffmpeg_on_path(logger)
     ensure_ffmpeg_available(dependencies["ffmpeg_executable"], logger)
 
     args = parse_cli_args(videos_path, audios_path, cleaned_suffix, transcript_extension)
     logger.info(
         "CLI arguments parsed: type=%s, language=%s, cleanup=%s, diarize=%s, num_speakers=%s",
-        args.type,
-        args.language,
-        args.cleanup,
-        args.diarize,
-        args.num_speakers,
+        args.type, args.language, args.cleanup, args.diarize, args.num_speakers,
     )
 
-    params = load_yaml_file(params_path)
-    prompts = load_yaml_file(prompts_path)
-
-    language = args.language
-    transcription_model_name = params["transcription_model"]
-    cleanup_model_name = params["cleanup_model"]
-    cleanup_prompt = prompts["cleanup_prompt"]
-    if not isinstance(cleanup_prompt, str) or not cleanup_prompt.strip():
-        raise ProcessingError(f"{prompts_path} must define a non-empty cleanup_prompt")
-
-    # Resolve diarization config early so any config-level issues surface
-    # before we pay for Whisper model loading or transcription.
-    diarization_config = load_diarization_config(diarization_path)
+    # Resolve diarization on/off from config + flags (CLI semantics preserved).
+    diarization_config = load_diarization_config(files["diarization"])
     if args.no_diarize:
-        diarization_config.enabled = False
+        diarize = False
     elif args.diarize:
-        diarization_config.enabled = True
+        diarize = True
+    else:
+        diarize = diarization_config.enabled
 
-    device = select_device(logger)
-    logger.info("Using device: %s", device)
-
-    logger.info("Loading Whisper model: %s", transcription_model_name)
-    whisper_model = whisper.load_model(transcription_model_name, device=device)
-    logger.info("Whisper model loaded.")
-
-    # --- Build pipeline steps ---
-    transcripts_path = Path(transcripts_folder)
-    audios_path_obj = Path(audios_path)
+    params = load_yaml_file(files["params"])
+    model_name = params["transcription_model"]
 
     if args.type == "video":
-        ingestion_step = VideoIngestionStep(audios_path_obj, extracted_audio_extension)
         source_folder = videos_path
         extensions = tuple(general_config["extensions"]["video"])
     else:
-        ingestion_step = AudioIngestionStep()
         source_folder = audios_path
         extensions = tuple(general_config["extensions"]["audio"])
 
-    transcription_step = TranscriptionStep(
-        whisper_model=whisper_model,
-        progress_update_interval=processing["progress_update_interval_seconds"],
-    )
-
-    output_step = OutputStep(
-        transcripts_folder=transcripts_path,
-        transcript_extension=transcript_extension,
-        cleaned_suffix=cleaned_suffix,
-    )
-
-    steps = [ingestion_step, transcription_step]
-
-    if diarization_config.enabled:
-        diarization_backend = create_diarization_backend(
-            diarization_config,
-            device,
-            logger,
-        )
-        diarization_work_dir = Path(audios_path) / ".diarization_cache"
-        steps.append(
-            DiarizationStep(
-                backend=diarization_backend,
-                config=diarization_config,
-                work_dir=diarization_work_dir,
-                ffmpeg_executable=dependencies["ffmpeg_executable"],
-                num_speakers_override=args.num_speakers,
-            )
-        )
-        logger.info("Diarization mode is enabled (backend=%s)", diarization_config.backend)
-
-    if args.cleanup:
-        cleanup_func = functools.partial(
-            cleanup_with_ollama,
-            cleanup_model_name=cleanup_model_name,
-            cleanup_prompt=cleanup_prompt,
-            device=device,
-            ollama_url=ollama["url"],
-            ollama_timeout_seconds=ollama["timeout_seconds"],
-            ollama_request_content_type=ollama["request_content_type"],
-            logger=logger,
-        )
-        steps.append(CleanupStep(cleanup_func))
-        logger.info("Cleanup mode is enabled with model: %s", cleanup_model_name)
-
-    steps.append(output_step)
-
-    pipeline = PipelineOrchestrator(steps=steps, logger=logger)
-
-    # --- Discover and process files ---
     media_files = discover_media_files(source_folder, extensions)
     logger.info("Found %d supported files in %s.", len(media_files), source_folder)
 
-    for filename, file_path in media_files:
-        context = PipelineContext(
-            source_path=file_path,
-            input_type=args.type,
-            language=language,
-        )
-        pipeline.run(context)
+    _process_batch(
+        media_files,
+        model_name=model_name,
+        language=args.language,
+        cleanup=args.cleanup,
+        diarize=diarize,
+        num_speakers=args.num_speakers,
+        logger=logger,
+    )
 
     logger.info("All processing completed.")
+
+
+def _process_batch(
+    media_files,
+    *,
+    model_name: str,
+    language: str,
+    cleanup: bool,
+    diarize: bool,
+    num_speakers,
+    logger,
+) -> None:
+    """Transcribe each discovered file, continuing past any single-file failure.
+
+    A corrupt/no-audio file raises MediaDecodeError (re-raised by the service);
+    defensively, any other exception is caught too. We log it and move on so one
+    bad file never kills the batch (matches Task 4's CLI-parity note).
+    """
+    for _filename, file_path in media_files:
+        try:
+            result = transcribe_file(
+                file_path,
+                model=model_name,
+                language=language,
+                cleanup=cleanup,
+                diarize=diarize,
+                num_speakers=num_speakers,
+                config_path=CONFIG_PATH,
+                logger=logger,
+            )
+        except MediaDecodeError as exc:
+            logger.error("Skipping %s: %s", file_path.name, exc)
+            continue
+        except Exception as exc:  # one bad file must not kill the batch
+            logger.exception("Unexpected error on %s: %s", file_path.name, exc)
+            continue
+        if result.status == "failed":
+            logger.error("Failed: %s (%s)", file_path.name, result.message)
 
 
 if __name__ == "__main__":

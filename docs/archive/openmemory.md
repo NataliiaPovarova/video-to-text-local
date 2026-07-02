@@ -1,3 +1,9 @@
+> **Archived 2026-06-21 by `/curate`.** Superseded by the live docs: the current
+> architecture lives in `CLAUDE.md`, and the torchcodec/Windows and `.env`/secrets
+> notes live in `README.md`. This file's project tree, components, and patterns
+> predate the web GUI + diarization work and are kept only as historical context.
+> Do not edit; not part of the active doc set.
+
 # OpenMemory Guide
 
 ## Overview

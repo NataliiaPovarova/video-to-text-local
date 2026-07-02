@@ -45,14 +45,31 @@ class DiarizationStep(PipelineStep):
                 context.document.pipeline_state,
             )
 
-        context.document = diarize_document(
-            document=context.document,
-            audio_path=context.audio_path,
-            backend=self._backend,
-            config=self._config,
-            logger=logger,
-            work_dir=self._work_dir,
-            ffmpeg_executable=self._ffmpeg_executable,
-            num_speakers_override=self._num_speakers_override,
-        )
+        # Diarization is an optional enhancement on top of an already-complete
+        # transcript. Mirror CleanupStep: if it fails, keep the raw transcript
+        # (diarize_document mutates the document only on success, so it stays
+        # pristine here), record a warning, and let the pipeline continue to
+        # OutputStep -- never abort the whole job. Catch broadly because the
+        # pyannote/HF backend failure surface is wide (auth, download, CUDA,
+        # audio decode, model format).
+        try:
+            context.document = diarize_document(
+                document=context.document,
+                audio_path=context.audio_path,
+                backend=self._backend,
+                config=self._config,
+                logger=logger,
+                work_dir=self._work_dir,
+                ffmpeg_executable=self._ffmpeg_executable,
+                num_speakers_override=self._num_speakers_override,
+            )
+        except Exception as exc:  # noqa: BLE001 -- optional feature, degrade gracefully
+            logger.warning(
+                "Diarization unavailable for %s: %s; keeping raw transcript.",
+                context.source_path.name,
+                exc,
+            )
+            context.document.metadata.setdefault("warnings", []).append(
+                f"diarization unavailable: {exc}"
+            )
         return context

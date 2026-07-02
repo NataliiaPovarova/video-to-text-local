@@ -5,8 +5,15 @@ from pathlib import Path
 
 from src.ingestion.video_extractor import extract_audio_from_video
 from src.models import PipelineContext, PipelineState, TranscriptDocument
+from src.transcription.asr_engine import _get_audio_duration_seconds
+from src.utils.errors import MediaDecodeError
 
 from .steps import PipelineStep
+
+
+def _probe_duration(path: Path) -> float | None:
+    """Return decodable duration in seconds, or None if the file can't be read."""
+    return _get_audio_duration_seconds(str(path))
 
 
 class VideoIngestionStep(PipelineStep):
@@ -18,10 +25,17 @@ class VideoIngestionStep(PipelineStep):
 
     def execute(self, context: PipelineContext, logger: logging.Logger) -> PipelineContext:
         audio_output = self._audios_path / (context.source_path.stem + self._extension)
-        success = extract_audio_from_video(context.source_path, audio_output, logger)
+        try:
+            success = extract_audio_from_video(context.source_path, audio_output, logger)
+        except Exception as exc:  # moviepy/ffmpeg decode failure
+            raise MediaDecodeError(
+                f"Could not read/decode '{context.source_path.name}': it may be corrupt, "
+                "truncated, or use an unsupported codec."
+            ) from exc
         if not success:
-            context.fail(f"No audio track in {context.source_path.name}")
-            return context
+            raise MediaDecodeError(
+                f"Could not read/decode '{context.source_path.name}': it has no audio track."
+            )
 
         context.audio_path = audio_output
         context.document = TranscriptDocument(
@@ -36,6 +50,13 @@ class AudioIngestionStep(PipelineStep):
     """Prepare an audio file for transcription (no extraction needed)."""
 
     def execute(self, context: PipelineContext, logger: logging.Logger) -> PipelineContext:
+        # Probe decodability up front so corrupt/unsupported audio yields a clear
+        # MediaDecodeError instead of an opaque ffmpeg failure mid-transcription.
+        if _probe_duration(context.source_path) is None:
+            raise MediaDecodeError(
+                f"Could not read/decode '{context.source_path.name}': it may be corrupt, "
+                "truncated, missing an audio track, or use an unsupported codec."
+            )
         context.audio_path = context.source_path
         context.document = TranscriptDocument(
             source_file=str(context.source_path),

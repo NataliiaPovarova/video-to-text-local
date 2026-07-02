@@ -1,0 +1,64 @@
+#!/usr/bin/env bash
+#
+# Easy-access transcription wrapper for video-to-text-local.
+#
+# Usage:
+#   ./transcribe /path/to/video.mp4        # copy a file in and transcribe it
+#   ./transcribe /path/to/audio.mp3        # audio works too (mp3 / m4a)
+#   ./transcribe                           # transcribe whatever is already in videos/
+#   ./transcribe ~/clip.mp4 --cleanup      # any extra flags pass straight to main.py
+#
+# Defaults to English (--language en). Override by passing your own --language xx.
+# Other handy flags (passed through to main.py): --cleanup, --diarize, --language ru
+#
+set -eo pipefail
+
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+cd "$HERE"
+
+# Put the venv (which contains our ffmpeg symlink) and Homebrew, if present,
+# on PATH so `ffmpeg` and the right `python` both resolve.
+export PATH="$HERE/venv/bin:/opt/homebrew/bin:$PATH"
+PY="$HERE/venv/bin/python"
+
+if [ ! -x "$PY" ]; then
+  echo "Error: virtualenv missing at $HERE/venv — setup has not been run." >&2
+  exit 1
+fi
+if ! command -v ffmpeg >/dev/null 2>&1; then
+  echo "Error: ffmpeg not found on PATH. Expected it at $HERE/venv/bin/ffmpeg." >&2
+  exit 1
+fi
+
+# If the first argument is an existing file, copy it into the correct input
+# folder and infer --type from its extension.
+TYPE_FROM_FILE=""
+if [ "$#" -ge 1 ] && [ -f "$1" ]; then
+  SRC="$1"; shift
+  EXT="$(printf '%s' "${SRC##*.}" | tr '[:upper:]' '[:lower:]')"
+  case "$EXT" in
+    mp4|mov|avi|mkv|webm) TYPE_FROM_FILE="video"; DEST="videos" ;;
+    mp3|m4a)              TYPE_FROM_FILE="audio"; DEST="audios" ;;
+    *) echo "Error: unsupported file type '.$EXT'. Videos: mp4/mov/avi/mkv/webm. Audio: mp3/m4a." >&2; exit 1 ;;
+  esac
+  mkdir -p "$DEST"
+  cp -f "$SRC" "$DEST/"
+  echo "Copied '$(basename "$SRC")' -> $DEST/"
+fi
+
+# Respect a caller-supplied --type / --language; otherwise fill in defaults.
+HAS_TYPE=0; HAS_LANG=0
+for a in "$@"; do
+  case "$a" in
+    --type) HAS_TYPE=1 ;;
+    --language) HAS_LANG=1 ;;
+  esac
+done
+
+EXTRA=()
+[ "$HAS_TYPE" -eq 0 ] && EXTRA+=(--type "${TYPE_FROM_FILE:-video}")
+[ "$HAS_LANG" -eq 0 ] && EXTRA+=(--language en)
+
+echo "Running: python main.py ${EXTRA[*]} $*"
+echo "(Transcripts will be written to: $HERE/transcripts/)"
+exec "$PY" main.py "${EXTRA[@]}" "$@"

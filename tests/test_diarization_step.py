@@ -1,6 +1,6 @@
 import logging
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 from src.models import PipelineContext, PipelineState, TranscriptDocument, TranscriptSegment
 from src.pipeline.steps_diarization import DiarizationStep
@@ -70,3 +70,25 @@ class TestDiarizationStep:
         ctx.fail("error")
         step = DiarizationStep(MockBackend(), _config())
         assert step.should_skip(ctx) is True
+
+    @patch("src.pipeline.steps_diarization.diarize_document")
+    def test_execute_degrades_when_diarization_fails(self, mock_diarize):
+        # Diarization is an optional enhancement: any backend failure must
+        # leave the raw transcript intact (state TRANSCRIBED, original
+        # segments) and record a warning -- NOT fail the pipeline. Mirrors
+        # CleanupStep's graceful-degradation contract. Uses RuntimeError (not
+        # ProcessingError) to prove the catch is broad enough: pyannote / HF
+        # backends raise many exception types (auth, download, CUDA, format).
+        mock_diarize.side_effect = RuntimeError("pyannote/HF backend exploded")
+        ctx = self._context()
+        original_segments = list(ctx.document.segments)
+
+        step = DiarizationStep(MockBackend(), _config())
+        result = step.execute(ctx, logging.getLogger("test"))
+
+        assert result.errors == []  # pipeline NOT failed -> OutputStep still runs
+        assert result.exception is None
+        assert result.document.pipeline_state == PipelineState.TRANSCRIBED  # not DIARIZED
+        assert result.document.segments == original_segments  # raw transcript preserved
+        warnings = result.document.metadata.get("warnings", [])
+        assert any("diariz" in w.lower() for w in warnings)

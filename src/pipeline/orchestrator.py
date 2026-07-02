@@ -33,8 +33,9 @@ class PipelineOrchestrator:
             try:
                 context = step.execute(context, self._logger)
             except Exception as exc:
+                context.exception = exc
                 context.fail(f"Step '{step.name}' failed: {exc}")
-                self._logger.exception("Step '%s' failed: %s", step.name, exc)
+                self._log_step_failure(step.name, exc)
                 break
 
         if context.errors:
@@ -47,3 +48,24 @@ class PipelineOrchestrator:
             self._logger.info("Pipeline completed successfully for: %s", context.source_path.name)
 
         return context
+
+    def _log_step_failure(self, step_name: str, exc: BaseException) -> None:
+        """Record a step failure without letting the logging call itself escape.
+
+        ``logger.exception`` formats the exception's traceback, which runs
+        ``linecache.checkcache`` over ``sys.modules``; a broken lazy module
+        there (e.g. speechbrain's ``k2_fsa``, missing the optional ``k2`` dep)
+        raises a *new* exception mid-format. Unguarded, that secondary error
+        replaced the real step failure and crashed the pipeline -- in the GUI it
+        left the progress bar pinned at 100%% with no transcript and no error.
+        A logging failure must never mask the genuine failure, so fall back to a
+        traceback-free record (which does not touch linecache) and, failing
+        that, swallow it -- the real exception is already on the context.
+        """
+        try:
+            self._logger.exception("Step '%s' failed: %s", step_name, exc)
+        except Exception:  # noqa: BLE001 -- logging must never break the pipeline
+            try:
+                self._logger.error("Step '%s' failed: %s", step_name, exc)
+            except Exception:  # noqa: BLE001
+                pass

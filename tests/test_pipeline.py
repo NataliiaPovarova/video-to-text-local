@@ -100,3 +100,65 @@ class TestPipelineOrchestrator:
         ctx = self._make_context()
         pipeline.run(ctx)
         step_after.execute.assert_not_called()
+
+    def test_logging_failure_does_not_mask_step_error(self):
+        """A failure while LOGGING a step error must never replace the real
+        step exception or crash the pipeline.
+
+        Real-world trigger (the GUI-hang bug): logging an exception formats its
+        traceback, which runs ``linecache.checkcache`` over ``sys.modules``;
+        a broken lazy module there (speechbrain's ``k2_fsa``, missing the
+        optional ``k2`` dep) raises a *new* ImportError mid-format. Unguarded,
+        that secondary error escaped ``logger.exception``, skipped the
+        orchestrator's ``break``, propagated out of ``transcribe_file``
+        uncaught, and left the Gradio handler hanging at 100% with no
+        transcript and no error. The orchestrator must isolate the logging
+        call so the genuine step failure is always what reaches the caller as
+        a failed context.
+        """
+
+        class ExplodingLogger:
+            """Mimics the landmine: ``.exception()`` (the traceback-formatting
+            path) raises; the traceback-free ``.error()`` fallback is safe."""
+
+            def __init__(self):
+                self.error_calls = []
+                self.exception_attempted = False
+
+            def info(self, *a, **k):
+                pass
+
+            def warning(self, *a, **k):
+                pass
+
+            def exception(self, *a, **k):
+                self.exception_attempted = True
+                raise ImportError(
+                    "Lazy import of LazyModule(...speechbrain...k2_fsa) failed"
+                )
+
+            def error(self, *a, **k):
+                self.error_calls.append((a, k))
+
+        logger = ExplodingLogger()
+        after = MagicMock(spec=PipelineStep)
+        after.name = "After"
+        after.should_skip.return_value = True
+        pipeline = PipelineOrchestrator(steps=[FailingStep(), after], logger=logger)
+        ctx = self._make_context()
+
+        # Must NOT raise, even though logger.exception() raises mid-format.
+        result = pipeline.run(ctx)
+
+        # The REAL step error survives -- not the ImportError from logging.
+        assert isinstance(result.exception, RuntimeError)
+        assert "Intentional failure" in str(result.exception)
+        assert len(result.errors) == 1 and "Intentional failure" in result.errors[0]
+        # It tried the full-traceback exception() path FIRST (the useful one),
+        # then fell back to the traceback-free logger.error path -- not an escape,
+        # and not skipping straight to error() (which would lose tracebacks when
+        # logging works normally).
+        assert logger.exception_attempted
+        assert logger.error_calls
+        # The pipeline still stopped: the step after the failure never ran.
+        after.execute.assert_not_called()

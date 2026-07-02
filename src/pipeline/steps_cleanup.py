@@ -5,6 +5,7 @@ from collections.abc import Callable
 
 from src.models import PipelineContext, PipelineState
 from src.output.formatter import format_document_with_speakers
+from src.utils.errors import ProcessingError
 
 from .steps import PipelineStep
 
@@ -29,5 +30,9 @@ class CleanupStep(PipelineStep):
             return context
 
         logger.info("Running cleanup for %s", context.source_path.name)
-        context.cleaned_text = self._cleanup_func(full_text)
+        try:
+            context.cleaned_text = self._cleanup_func(full_text)
+        except ProcessingError as exc:
+            logger.warning("Cleanup unavailable for %s: %s", context.source_path.name, exc)
+            context.document.metadata.setdefault("warnings", []).append(f"cleanup unavailable: {exc}")
         return context
