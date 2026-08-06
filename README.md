@@ -3,7 +3,7 @@
 
 # Video / Audio Transcription with Local Whisper
 
-This project transcribes media using a locally hosted Whisper model, then optionally cleans the transcript with a local Ollama model. Videos have their audio track extracted first, while audio files (`.mp3`, `.m4a`) are sent straight to transcription. Outputs are saved to `transcripts/`, and execution logs are written to `logs/`.
+This project transcribes media using a locally hosted Whisper model, then optionally cleans the transcript with a local Ollama model. Videos have their audio track extracted first, while audio files (`.mp3`, `.m4a`, `.aac`) are sent straight to transcription. Outputs are saved to `transcripts/`, and execution logs are written to `logs/`.
 
 > **Maintainers note:** when editing this file, please keep [`README.ru.md`](README.ru.md) in sync.
 
@@ -231,7 +231,7 @@ Diarization flags:
 
 **Supported extensions:**
 - Videos: `.mp4`, `.mov`, `.avi`, `.mkv`, `.webm`
-- Audio: `.mp3`, `.m4a`
+- Audio: `.mp3`, `.m4a`, `.aac`
 
 **Outputs:**
 - Raw transcript: `<name>.txt`
