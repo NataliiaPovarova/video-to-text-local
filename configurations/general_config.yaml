@@ -19,6 +19,7 @@ extensions:
   audio:
     - ".mp3"
     - ".m4a"
+    - ".aac"
 
 output:
   transcript_extension: ".txt"
