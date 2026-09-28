@@ -302,18 +302,21 @@ def _tmp_config(tmp_path) -> str:
     (tmp_path / "prompts.yaml").write_text("cleanup_prompt: clean this\n", encoding="utf-8")
     (tmp_path / "diarization.yaml").write_text("enabled: false\n", encoding="utf-8")
     cfg = tmp_path / "general_config.yaml"
+    # Forward slashes: a Windows path (C:\Users\...) inside a double-quoted YAML
+    # scalar is parsed as escape sequences (\U...) and fails to load.
+    root = tmp_path.as_posix()
     cfg.write_text(
         textwrap.dedent(
             f"""
             paths:
-              videos: "{tmp_path}/videos"
-              audios: "{tmp_path}/audios"
-              transcripts: "{tmp_path}/transcripts"
-              logs: "{tmp_path}/logs"
+              videos: "{root}/videos"
+              audios: "{root}/audios"
+              transcripts: "{root}/transcripts"
+              logs: "{root}/logs"
             files:
-              params: "{tmp_path}/params.yaml"
-              prompts: "{tmp_path}/prompts.yaml"
-              diarization: "{tmp_path}/diarization.yaml"
+              params: "{root}/params.yaml"
+              prompts: "{root}/prompts.yaml"
+              diarization: "{root}/diarization.yaml"
             extensions:
               video: [".mp4", ".mov", ".avi", ".mkv", ".webm"]
               audio: [".mp3", ".m4a", ".aac"]
