@@ -2,10 +2,10 @@
 > The constitution. Read this first, every session. It governs how work is planned, executed, verified, and recorded. When in doubt, the rules here win over convenience.
 
 **What this is:** a local, single-user Gradio web GUI layered over the existing Whisper CLI transcription pipeline — upload a media file, pick model + language, transcribe with live progress, view/download the transcript (txt; srt/vtt in Phase 2), and browse a searchable history. Both the GUI and the CLI call one in-process seam so the CLI stays unchanged.
-**Stack:** Python 3.9.6 · openai-whisper 20250625 · Gradio 4.44.1 (`gradio>=4.44,<5`) · moviepy · pyannote.audio (optional) · Ollama (optional) · pytest
+**Stack:** Python ≥3.10 (dev `.venv`: 3.12.4; Docker: 3.11) · openai-whisper 20250625 · Gradio 4.44.1 (`gradio>=4.44,<5`) · moviepy · pyannote.audio (optional) · Ollama (optional) · pytest
 **Commands:** test `python -m pytest -q` · lint `(none configured)` · typecheck `(none configured)` · build/GUI-smoke `python -m pytest tests/test_app_smoke.py -q` (app is interpreted — no compile step)
 
-> **Adopted at** `cd888bf` (branch `feat/web-gui`) · 2026-06-21 — this repo is mid-build (Phase 1 core landed; Phase 2 in progress). See `docs/BUILD-STATE.md` and `docs/DECISIONS.md` (D-002) for the adoption baseline.
+> **Adopted at** `cd888bf` (branch `feat/web-gui`) · 2026-06-21 — historical: that branch was squash-merged into `main` (#12), so adoption-era SHAs no longer exist in history. **Integration branch is `main`** (D-006). Actualized at `87c5ab2` · 2026-09-28. See `docs/BUILD-STATE.md` and `docs/DECISIONS.md` (D-002, D-006) for the baseline.
 
 ---
 
@@ -29,7 +29,7 @@ Docs are the contract between these roles — **not** chat memory. If it isn't w
 
 ## 3. Chunk discipline
 
-- **One chunk = one PR off `feat/web-gui`** (the live integration branch; not `master`). **STOP after each** for explicit human review/merge. Do not batch chunks.
+- **One chunk = one PR off `main`** (the live integration branch; D-006). **STOP after each** for explicit human review/merge. Do not batch chunks.
 - Commit **only the fix + its test** (one logical change). A correction to a prior claim/doc is a **separate** commit (see §8).
 - Branch per chunk; re-pull the integration branch before branching the next.
 
@@ -82,7 +82,7 @@ Cross-cutting, always in force:
 ### Project conventions (carried over from the prior CLAUDE.md, now archived)
 - **Bilingual docs.** User-facing docs are `README.md` (English, the GitHub default) and `README.ru.md` (Russian). Keep the two in sync when editing either.
 - **Don't implement from the archive.** Superseded plans/specs/snapshots live in `docs/archive/` and are historical only.
-- **Python 3.9 syntax.** Keep `from __future__ import annotations` in modules using `X | Y` runtime annotations (gradio 5 / dropping 3.9 is out of scope).
+- **Python ≥3.10** (D-007). Don't use 3.11+ features (`tomllib`, `except*`, `typing.Self`, `StrEnum`) — Docker is on 3.11 but 3.10 is the floor. Existing `from __future__ import annotations` stays; the gradio 4→5 question is out of scope (GUI is not this block's focus).
 
 ### Doc-bloat control
 Bloat is **docs that aren't read or aren't true** — not docs that are long. Ledgers (`BUILD-STATE`, `DECISIONS`, `LEARNINGS`) are append-only — read the tail; `/curate` rolls up closed entries to `docs/archive/` when long, never prunes. Current-state docs (`SYSTEM-SPEC`, `CODEBASE-MAP`, `AUDIT`) carry a `> verified-against <SHA> · <date>` stamp; a stamp older than HEAD with unre-checked claims is **stale**. Link, don't copy; lead with the conclusion; never restate code. `/curate` is the standing loop that enforces this.
