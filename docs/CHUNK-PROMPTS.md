@@ -1,7 +1,7 @@
 # Local Whisper Web GUI — CHUNK PROMPTS
 ### The process as paste-able prompts. Run one chunk at a time in Claude Code.
 
-Governed by `CLAUDE.md`. One chunk = one PR off `feat/web-gui` (the live integration branch), STOP after each. Commit only the fix + its test; corrections are separate commits.
+Governed by `CLAUDE.md`. One chunk = one PR off `main` (the live integration branch, D-006), STOP after each. Commit only the fix + its test; corrections are separate commits.
 
 **How to read this file.** Not every section is a step you run. **Runnable prompts:** §1 bootstrap, §3 filled per chunk. **Reference** (applied *inside* the prompts, never run alone): §2 model tiering, §4 sub-agent briefs, §5 merge gate, §6 feature variant. Order: §1 once per session, then §3 per chunk.
 
@@ -16,7 +16,7 @@ STEP 0 — bootstrap. No code yet.
 3. Baseline: run python -m pytest -q; report the green counts. (No separate lint/typecheck/build — the GUI build-smoke is `python -m pytest tests/test_app_smoke.py -q`.)
 4. Print a 5-line situation report: SHA, baseline counts, the next chunk, any LEARNINGS rule relevant today.
 Wait for the chunk prompt. If the baseline is RED, STOP and surface it — do not start work on a red tree.
-   (Note: on a non-Windows host, expect the one known Windows-only failure from D-002 finding #1 until it is guarded.)
+   (Windows baseline verified green after C-002/D-004; Linux expected green (C-001), not re-run since. The GUI smoke test is SKIPPED where gradio isn't installed.)
 ```
 
 ## §2 — Model tiering (reference, not a step)
@@ -32,7 +32,7 @@ Wait for the chunk prompt. If the baseline is RED, STOP and surface it — do no
 
 ```
 CHUNK: {{CHUNK_ID}} — {{TITLE}}
-Spec: {{SPEC_REF}}. Branch: {{BRANCH}} (off feat/web-gui).
+Spec: {{SPEC_REF}}. Branch: {{BRANCH}} (off main).
 You are the lead orchestrator. Follow this exactly; STOP at the end.
 
 STEP A — RE-GROUND (no code yet).

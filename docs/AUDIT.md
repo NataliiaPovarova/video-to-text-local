@@ -1,7 +1,7 @@
 # Local Whisper Web GUI — AUDIT
 > The guardrail table: every invariant ↔ its named passing test ↔ status. An invariant with no named passing test is a **blocker** until the test exists. Updated in the same PR whenever an invariant is reinforced or added.
 
-> **verified-against** `cd888bf` · 2026-06-21 — current-state doc; restamp via `/curate` when it drifts. Status reflects the executed adoption baseline (114 passed / 1 failed; the failure is INV-unrelated — see DECISIONS D-002).
+> **verified-against** `87c5ab2` (`main`) · 2026-09-28 — current-state doc; restamp via `/curate` when it drifts. Status reflects the executed Windows baseline (111 passed / 1 skipped — the skip is the gradio smoke file; see D-004).
 
 | Invariant | Named test | Status |
 |-----------|------------|--------|
@@ -14,7 +14,7 @@
 | INV-7 — crash-safe + non-ASCII-preserving history index | `tests/test_history.py::test_survives_corrupt_index`, `::test_add_and_list_newest_first`, `::test_delete_removes_record_and_files` | GREEN |
 | INV-8 — auto-detect records real language, never blank | `tests/test_asr_engine.py::test_detected_language_captured_when_auto`, `::test_empty_string_language_routes_to_auto`; end-to-end `tests/test_service.py::TestTranscribeFile::test_auto_detect_passes_no_language_kwarg` | GREEN |
 | INV-9 — GUI install never downgrades numpy/torch/whisper | *(none — install-time gate only: `pip install --dry-run -r requirements-gui.txt`)* | **PENDING** |
-| INV-10 — a failing file never aborts a batch | `tests/test_app_smoke.py::test_run_batch_continues_after_file_failure` (GUI); `tests/test_main_batch.py::test_batch_continues_after_one_file_raises` (CLI) | GREEN |
+| INV-10 — a failing file never aborts a batch | `tests/test_app_smoke.py::test_run_batch_continues_after_file_failure` (GUI); `tests/test_main_batch.py::test_batch_continues_after_one_file_raises` (CLI) | GREEN (CLI) · GUI test SKIPPED in dev `.venv` (no gradio) |
 
 **PENDING obligations (typical first post-adoption chunks):**
 - INV-4 — add a test asserting the Blocks app sets `default_concurrency_limit=1` (inspect `demo`/queue config in a build-smoke test).
