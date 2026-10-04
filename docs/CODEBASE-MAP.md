@@ -1,7 +1,7 @@
 # Local Whisper Web GUI — CODEBASE-MAP
 > Where things live. Keep it short and current — a navigation aid, not a spec. Update when structure changes.
 
-> **verified-against** `cd888bf` · 2026-06-21 — current-state doc; restamp via `/curate` when it drifts.
+> **verified-against** `87c5ab2` (`main`) · 2026-09-28 — current-state doc; restamp via `/curate` when it drifts.
 
 ## Layout
 
@@ -20,9 +20,9 @@
 - `src/output/formatter.py` — txt writer; srt/vtt formatters (Phase 2).
 - `src/utils/` — `errors.py` (`ProcessingError`, `MediaDecodeError`), `config.py`, `cli.py`, `device.py` (imports torch), `logging_setup.py`, `system.py`, `progress.py`.
 - `configurations/` — `general_config.yaml`, `params.yaml`, `prompts.yaml`, `diarization.yaml`.
-- `tests/` — 20 files, ~115 test fns. `conftest.py` carries a speechbrain lazy-import guard for full-suite stability.
+- `tests/` — 19 `test_*.py` files; 111 tests collected without gradio (`test_app_smoke.py` is skipped as a module). `conftest.py` carries a speechbrain lazy-import guard for full-suite stability.
 - `docs/` — the groundwork doc set (this file et al.); `docs/archive/` holds superseded specs/plans + the pre-groundwork CLAUDE.md + openmemory.md.
-- `.github/workflows/release.yml` — semantic-release on `master` only (no test CI).
+- `.github/workflows/release.yml` — semantic-release, but configured for `master` while the only branch is `main` → never runs (no test CI either; D-006).
 
 ## Hot paths (the code most changes touch)
 
@@ -40,7 +40,7 @@
 
 ## Where the invariants are enforced
 
-- INV-1 → `main.py:48-135`  ·  INV-2 → `src/service.py:125-141`  ·  INV-3 → `src/service.py:40-74`
+- INV-1 → `main.py:48-135`  ·  INV-2 → `src/service.py:125-141`  ·  INV-3 → `src/service.py:40-76`
 - INV-4 → `app.py:280`  ·  INV-5 → `app.py:281`  ·  INV-6 → `src/utils/naming.py` (+ `src/service.py:191-192`)
 - INV-7 → `src/history.py:33,46-48`  ·  INV-8 → `src/transcription/asr_engine.py:137`
 - INV-9 → `requirements-gui.txt`  ·  INV-10 → `app.py:165-179`, `main.py`

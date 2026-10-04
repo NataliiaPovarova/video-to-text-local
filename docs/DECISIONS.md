@@ -34,3 +34,22 @@
 **Why:** production behavior was already correct (verified: mutation of `system.py` PATH-prepend / shim name / copy fallback → 3 shim tests fail). Adversarial gate: SHIP-READY, 0 blockers.
 **Open (not fixed here):** `test_prefers_system_ffmpeg_and_leaves_path_untouched` places an extension-less `ffmpeg` on PATH; it passes on Python 3.12 (`shutil.which` accepts it) but likely fails on 3.9 on Windows (PATHEXT-only lookup). Tied to the pending target-Python decision (docs chunk). The GUI smoke test is skipped in this venv (gradio not installed) — PENDING.
 **Out of scope:** changing `ensure_ffmpeg_on_path`; the Python-version / gradio pin decision.
+
+## D-005 — correction to D-003: the `.gitignore` cleanup had regressed
+**Finding:** D-003 states `docs/` and `CLAUDE.md` were un-ignored. At `87c5ab2` the tail of `.gitignore` again contained an `# OpenMemory - IDE/Assistant specific rules` block with `.cursor\rules\openmemory.mdc`, `CLAUDE.md` and `docs/` — tracked files were unaffected, but any NEW file under `docs/` was silently ignored (`git check-ignore docs/NEW-FILE.md` matched `.gitignore:40:docs/`).
+**Decision:** remove that block (committed separately as a correction, CLAUDE.md §8). `.cursor/` above already covers the OpenMemory rule file.
+**Why:** the next chunk adds a new doc (`docs/AUDIO-PIPELINE-PLAN.md`); it must be trackable. The block looks tool-generated (OpenMemory), so it may be re-appended — re-check with `git check-ignore -v docs/<new>.md` when adding docs.
+**Out of scope:** reworking the rest of `.gitignore`.
+
+## D-006 — integration branch is `main`; adoption-era SHAs are historical
+**Finding:** `feat/web-gui` was squash-merged into `main` (#12); the remote has only `main`. The SHAs recorded at adoption (`cd888bf`, `d477a50`, `f3ffc7c`) do not exist in `main`'s history (squash merges). CLAUDE.md §3 and CHUNK-PROMPTS still said "PR off `feat/web-gui`".
+**Decision:** one chunk = one PR off `main`. Current-state docs (SYSTEM-SPEC, CODEBASE-MAP, AUDIT) are restamped `verified-against 87c5ab2`. Ledger entries (BUILD-STATE, DECISIONS D-001..D-003) keep their old SHAs as history — append-only, not rewritten.
+**Open (not fixed here):** `.github/workflows/release.yml` and `package.json` (`release.branches`) target `master`, so semantic-release never runs on `main`. Fixing it is a CI decision for the human; there is also still no pytest CI (D-002 #2).
+**Out of scope:** the CI/release fix itself.
+
+## D-007 — target Python is ≥3.10 (was "3.9.6")
+**Finding:** "Python 3.9.6" came from the author's venv when the GUI was designed (`docs/archive/2026-06-19-whisper-web-gui-design.md:55`: "stay on 3.9 + Gradio 4.x — zero disruption to the working venv"). Nothing in the code or dependencies requires 3.9. In practice 3.9 no longer works: the installed ASR stack requires ≥3.10 (numpy 2.2.6, torch 2.14, pyannote.audio 4.0.7 — all `Requires-Python >=3.10`); Docker uses `python:3.11-slim`; the dev `.venv` is 3.12.4.
+**Decision:** minimum supported Python = 3.10. Code must not use 3.11+ features (`tomllib`, `except*`, `typing.Self`, `StrEnum`); a scan at `87c5ab2` found none.
+**Why 3.10 and not 3.12:** it is the real floor of the dependency stack, keeps Docker (3.11) and dev (3.12) inside the range, and costs nothing now.
+**Not verified:** no 3.10 interpreter was available — the suite was run on 3.12.4 only. Minor 3.12 dependency noted in D-004 (`test_prefers_system_ffmpeg...`).
+**Out of scope:** the gradio 4→5 / `huggingface_hub<1.0` pin chain (it exists only because of 3.9). The GUI is not the audio block's focus; `requirements-gui.txt` comments still mention 3.9 and are left for whoever owns the GUI.
