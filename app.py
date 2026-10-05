@@ -215,7 +215,7 @@ def build_ui() -> gr.Blocks:
                     file_in = gr.File(
                         label="Upload audio/video (one or many)",
                         file_count="multiple",
-                        file_types=[".mp4", ".mov", ".avi", ".mkv", ".webm", ".mp3", ".m4a"],
+                        file_types=[".mp4", ".mov", ".avi", ".mkv", ".webm", ".mp3", ".m4a", ".aac"],
                         type="filepath",
                     )
                     media_preview = gr.Audio(label="Preview (current upload)", visible=False)

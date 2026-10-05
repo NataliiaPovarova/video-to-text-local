@@ -1,6 +1,8 @@
 **venv/
 # Local environment variables (per-developer secrets). Never commit.
 .env
+venv_mac/
+venv_win/
 # But keep the committed template.
 !.env.example
 .cursor/

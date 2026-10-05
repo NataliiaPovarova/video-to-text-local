@@ -10,6 +10,10 @@ from src.utils.config import load_yaml_file
 from src.utils.errors import ProcessingError
 from src.utils.system import ensure_ffmpeg_on_path
 
+# ensure_ffmpeg_on_path names the shim ffmpeg.exe on Windows (PATHEXT) and
+# plain ffmpeg elsewhere.
+_SHIM_NAME = "ffmpeg.exe" if sys.platform == "win32" else "ffmpeg"
+
 
 class TestLoadYamlFile:
     def test_loads_valid_yaml(self, tmp_path: Path):
@@ -78,15 +82,20 @@ class TestEnsureFfmpegOnPath:
 
         result = ensure_ffmpeg_on_path(shim_dir=shim_dir)
 
-        shim = shim_dir / "ffmpeg"
+        shim = shim_dir / _SHIM_NAME
         assert result == str(shim)
-        assert shim.is_symlink()
-        assert os.path.realpath(shim) == os.path.realpath(bundled)
+        if shim.is_symlink():
+            assert os.path.realpath(shim) == os.path.realpath(bundled)
+        else:
+            # Only Windows without symlink privilege may fall back to a copy.
+            assert sys.platform == "win32"
+            assert shim.read_bytes() == bundled.read_bytes()
         # shim dir prepended so a *bare* `ffmpeg` resolves to the bundled binary
         assert os.environ["PATH"].split(os.pathsep)[0] == str(shim_dir)
         # The decisive assertion: a bare "ffmpeg" now resolves end-to-end,
-        # which is exactly the lookup whisper's load_audio performs.
-        assert shutil.which("ffmpeg") == str(shim)
+        # which is exactly the lookup whisper's load_audio performs. normcase:
+        # on Windows shutil.which returns the PATHEXT spelling (ffmpeg.EXE).
+        assert os.path.normcase(shutil.which("ffmpeg")) == os.path.normcase(str(shim))
 
     def test_idempotent_reuses_existing_shim(self, monkeypatch, tmp_path):
         bundled = self._fake_binary(tmp_path / "ffmpeg-bundled")
@@ -99,7 +108,10 @@ class TestEnsureFfmpegOnPath:
         first = ensure_ffmpeg_on_path(shim_dir=shim_dir)
         second = ensure_ffmpeg_on_path(shim_dir=shim_dir)
 
-        assert first == second == str(shim_dir / "ffmpeg")
+        # normcase: the second call resolves the shim via shutil.which, which on
+        # Windows returns the PATHEXT spelling (ffmpeg.EXE) of the same file.
+        expected = os.path.normcase(str(shim_dir / _SHIM_NAME))
+        assert os.path.normcase(first) == os.path.normcase(second) == expected
         # PATH must not accumulate duplicate shim-dir entries across calls.
         assert os.environ["PATH"].split(os.pathsep).count(str(shim_dir)) == 1
 

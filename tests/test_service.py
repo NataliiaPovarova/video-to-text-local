@@ -107,6 +107,19 @@ class TestTranscribeFile:
         with pytest.raises(MediaDecodeError):
             service.transcribe_file(bad, model="base", language="en", config_path=cfg)
 
+    def test_transcribes_aac_audio(self, monkeypatch, tmp_path):
+        self._patch(monkeypatch)
+        cfg = _tmp_config(tmp_path)
+        src_audio = tmp_path / "clip.aac"
+        src_audio.write_bytes(b"x")
+        monkeypatch.setattr("src.pipeline.steps_ingestion._probe_duration", lambda p: 1.0)
+
+        result = service.transcribe_file(
+            src_audio, model="base", language="en", config_path=cfg, sanitize_output=True
+        )
+        assert result.status == "success"
+        assert Path(result.txt_path).exists()
+
     def test_raises_clear_error_when_ffmpeg_unavailable(self, monkeypatch, tmp_path):
         # Root cause of the GUI hang: whisper's load_audio shells out to a bare
         # `ffmpeg`. When neither a system ffmpeg nor the bundled imageio-ffmpeg
@@ -289,21 +302,24 @@ def _tmp_config(tmp_path) -> str:
     (tmp_path / "prompts.yaml").write_text("cleanup_prompt: clean this\n", encoding="utf-8")
     (tmp_path / "diarization.yaml").write_text("enabled: false\n", encoding="utf-8")
     cfg = tmp_path / "general_config.yaml"
+    # Forward slashes: a Windows path (C:\Users\...) inside a double-quoted YAML
+    # scalar is parsed as escape sequences (\U...) and fails to load.
+    root = tmp_path.as_posix()
     cfg.write_text(
         textwrap.dedent(
             f"""
             paths:
-              videos: "{tmp_path}/videos"
-              audios: "{tmp_path}/audios"
-              transcripts: "{tmp_path}/transcripts"
-              logs: "{tmp_path}/logs"
+              videos: "{root}/videos"
+              audios: "{root}/audios"
+              transcripts: "{root}/transcripts"
+              logs: "{root}/logs"
             files:
-              params: "{tmp_path}/params.yaml"
-              prompts: "{tmp_path}/prompts.yaml"
-              diarization: "{tmp_path}/diarization.yaml"
+              params: "{root}/params.yaml"
+              prompts: "{root}/prompts.yaml"
+              diarization: "{root}/diarization.yaml"
             extensions:
               video: [".mp4", ".mov", ".avi", ".mkv", ".webm"]
-              audio: [".mp3", ".m4a"]
+              audio: [".mp3", ".m4a", ".aac"]
             output:
               transcript_extension: ".txt"
               cleaned_suffix: "_clean"

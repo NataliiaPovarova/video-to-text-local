@@ -34,7 +34,7 @@ from src.utils import (
 from src.utils.naming import build_output_basename, sanitize_stem
 
 _VIDEO_EXTS = {".mp4", ".mov", ".avi", ".mkv", ".webm"}
-_AUDIO_EXTS = {".mp3", ".m4a"}
+_AUDIO_EXTS = {".mp3", ".m4a", ".aac"}
 _device_cache: str | None = None
 
 _MODEL_LOCK = threading.Lock()
