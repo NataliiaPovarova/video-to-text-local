@@ -24,7 +24,7 @@ Install your own ffmpeg only if you prefer a specific build.
 ./transcribe /path/to/your/video.mp4
 ```
 
-- Copies the file into `videos/` (or `audios/` for `.mp3`/`.m4a`), runs Whisper,
+- Copies the file into `videos/` (or `audios/` for `.mp3`/`.m4a`/`.aac`), runs Whisper,
   and writes the transcript to `transcripts/<name>.txt`.
 - The wrapper defaults to **English**. For another language:
   `./transcribe file.mp4 --language ru`
