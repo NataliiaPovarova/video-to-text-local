@@ -4,7 +4,7 @@
 #
 # Usage:
 #   ./transcribe /path/to/video.mp4        # copy a file in and transcribe it
-#   ./transcribe /path/to/audio.mp3        # audio works too (mp3 / m4a)
+#   ./transcribe /path/to/audio.mp3        # audio works too (mp3 / m4a / aac)
 #   ./transcribe                           # transcribe whatever is already in videos/
 #   ./transcribe ~/clip.mp4 --cleanup      # any extra flags pass straight to main.py
 #
@@ -38,8 +38,8 @@ if [ "$#" -ge 1 ] && [ -f "$1" ]; then
   EXT="$(printf '%s' "${SRC##*.}" | tr '[:upper:]' '[:lower:]')"
   case "$EXT" in
     mp4|mov|avi|mkv|webm) TYPE_FROM_FILE="video"; DEST="videos" ;;
-    mp3|m4a)              TYPE_FROM_FILE="audio"; DEST="audios" ;;
-    *) echo "Error: unsupported file type '.$EXT'. Videos: mp4/mov/avi/mkv/webm. Audio: mp3/m4a." >&2; exit 1 ;;
+    mp3|m4a|aac)          TYPE_FROM_FILE="audio"; DEST="audios" ;;
+    *) echo "Error: unsupported file type '.$EXT'. Videos: mp4/mov/avi/mkv/webm. Audio: mp3/m4a/aac." >&2; exit 1 ;;
   esac
   mkdir -p "$DEST"
   cp -f "$SRC" "$DEST/"

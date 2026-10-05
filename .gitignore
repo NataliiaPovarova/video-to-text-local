@@ -33,7 +33,3 @@ __pycache__/
 # Removed here: the `docs/` ignore, three duplicate `CLAUDE.md` lines, and three
 # dead `.cursor\rules\openmemory.mdc` backslash paths git never matched
 # (`.cursor/` above already covers that directory).
-
-# OpenMemory - IDE/Assistant specific rules
-.cursor\rules\openmemory.mdc
-CLAUDE.md
