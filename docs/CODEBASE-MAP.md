@@ -18,7 +18,7 @@
 - `src/ingestion/` — `file_loader.py` (discovery), `video_extractor.py` (moviepy audio extract).
 - `src/processing/cleanup.py` — optional Ollama cleanup.
 - `src/output/formatter.py` — txt writer; srt/vtt formatters (Phase 2).
-- `src/utils/` — `errors.py` (`ProcessingError`, `MediaDecodeError`), `config.py`, `cli.py`, `device.py` (imports torch), `logging_setup.py`, `system.py`, `progress.py`.
+- `src/utils/` — `ffmpeg_tools.py` (all ffmpeg subprocess calls: `probe_media` → `MediaInfo`, `extract_audio`, `decode_to_array` — added C-005, not yet wired into the pipeline), `errors.py` (`ProcessingError`, `MediaDecodeError`), `config.py`, `cli.py`, `device.py` (imports torch), `logging_setup.py`, `system.py`, `progress.py`.
 - `configurations/` — `general_config.yaml`, `params.yaml`, `prompts.yaml`, `diarization.yaml`.
 - `tests/` — 19 `test_*.py` files; 111 tests collected without gradio (`test_app_smoke.py` is skipped as a module). `conftest.py` carries a speechbrain lazy-import guard for full-suite stability.
 - `docs/` — the groundwork doc set (this file et al.); `docs/archive/` holds superseded specs/plans + the pre-groundwork CLAUDE.md + openmemory.md.
