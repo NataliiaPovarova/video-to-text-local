@@ -91,14 +91,8 @@ def orchestrate() -> None:
     params = load_yaml_file(files["params"])
     model_name = params["transcription_model"]
 
-    if args.type == "video":
-        source_folder = videos_path
-        extensions = tuple(general_config["extensions"]["video"])
-    else:
-        source_folder = audios_path
-        extensions = tuple(general_config["extensions"]["audio"])
-
-    media_files = discover_media_files(source_folder, extensions)
+    source_folder = videos_path if args.type == "video" else audios_path
+    media_files = _discover(source_folder, general_config)
     logger.info("Found %d supported files in %s.", len(media_files), source_folder)
 
     _process_batch(
@@ -112,6 +106,17 @@ def orchestrate() -> None:
     )
 
     logger.info("All processing completed.")
+
+
+def _discovery_extensions(general_config) -> tuple[str, ...]:
+    """Both extension lists: --type only picks the folder; the seam's ffmpeg
+    probe decides video vs audio (an audio-only .webm in audios/ is audio)."""
+    ext = general_config["extensions"]
+    return tuple(dict.fromkeys([*ext["video"], *ext["audio"]]))
+
+
+def _discover(source_folder, general_config):
+    return discover_media_files(source_folder, _discovery_extensions(general_config))
 
 
 def _process_batch(

@@ -66,6 +66,8 @@ def media(tmp_path_factory) -> dict[str, Path]:
         "flac": _make(d / "a.flac", *_SINE),
         "aac": _make(d / "a.aac", *_SINE, "-c:a", "aac"),
         "unicode": _make(d / "запись 1 — тест.wav", *_SINE),
+        "video_48k": _make(d / "v_48k.mp4", *_VIDEO_SRC, "-f", "lavfi", "-i", "sine=duration=1:sample_rate=48000",
+                           "-shortest", "-c:a", "aac", "-ar", "48000"),
         "ogg": _make(d / "a.ogg", *_SINE),
         # Header/metadata text that looks like probe structure must not fool the parser.
         "output_in_name": _make(d / "Output #1.mp3", *_SINE),
@@ -255,6 +257,16 @@ class TestExtractAudio:
         info = probe_media(extract_audio(media["video_audio"], tmp_path / "out.mp3", FFMPEG), FFMPEG)
         assert info.audio_codec == "mp3" and not info.is_video
 
+    def test_mp3_matches_moviepy_settings(self, media, tmp_path):
+        # C-006 keeps the pre-moviepy-removal output format: moviepy resampled
+        # to 44.1 kHz stereo and encoded libmp3lame at its default 128 kb/s.
+        out = extract_audio(media["video_48k"], tmp_path / "out.mp3", FFMPEG)
+        info = probe_media(out, FFMPEG)
+        assert info.sample_rate == 44100
+        assert info.channel_layout == "stereo"  # moviepy wrote stereo even from mono
+        stderr = subprocess.run([FFMPEG, "-hide_banner", "-i", str(out)], capture_output=True, text=True).stderr
+        assert "128 kb/s" in stderr
+
     def test_extension_is_case_insensitive(self, media, tmp_path):
         out = extract_audio(media["video_audio"], tmp_path / "OUT.WAV", FFMPEG)
         assert probe_media(out, FFMPEG).audio_codec == "pcm_s16le"
@@ -331,3 +343,43 @@ class TestDecodeToArray:
 
     def test_unicode_path(self, media):
         assert len(decode_to_array(media["unicode"], FFMPEG)) > 0
+
+
+# --------------------------------------------------------------- classify (transcribe wrapper)
+
+@needs_ffmpeg
+class TestClassifyCli:
+    """`python -m src.utils.ffmpeg_tools classify <file>` -- used by the bash
+    `transcribe` wrapper instead of its own extension list."""
+
+    @pytest.mark.parametrize("key,expected", [
+        ("video_audio", "video"), ("wav_stereo", "audio"), ("mp3_cover", "audio"), ("ogg", "audio"),
+    ])
+    def test_prints_kind(self, media, key, expected, capsys):
+        from src.utils.ffmpeg_tools import main
+
+        assert main(["classify", str(media[key]), "--ffmpeg", FFMPEG]) == 0
+        assert capsys.readouterr().out.strip() == expected
+
+    @pytest.mark.parametrize("key", ["video_mute", "broken"])
+    def test_rejects_with_message_and_nonzero_exit(self, media, key, capsys):
+        from src.utils.ffmpeg_tools import main
+
+        assert main(["classify", str(media[key]), "--ffmpeg", FFMPEG]) != 0
+        captured = capsys.readouterr()
+        assert captured.out == "" and captured.err.strip()
+
+    def test_module_entry_point_runs(self, media):
+        import sys
+
+        r = subprocess.run(
+            [sys.executable, "-m", "src.utils.ffmpeg_tools", "classify", str(media["wav_stereo"]), "--ffmpeg", FFMPEG],
+            capture_output=True, text=True, cwd=Path(__file__).resolve().parents[1],
+        )
+        assert r.returncode == 0 and r.stdout.strip() == "audio"
+
+
+def test_transcribe_wrapper_has_no_own_extension_list():
+    wrapper = (Path(__file__).resolve().parents[1] / "transcribe").read_text(encoding="utf-8")
+    assert "mp3|m4a" not in wrapper and "mp4|mov" not in wrapper
+    assert "src.utils.ffmpeg_tools classify" in wrapper

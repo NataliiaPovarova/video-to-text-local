@@ -2,7 +2,7 @@
 > The constitution. Read this first, every session. It governs how work is planned, executed, verified, and recorded. When in doubt, the rules here win over convenience.
 
 **What this is:** a local, single-user Gradio web GUI layered over the existing Whisper CLI transcription pipeline — upload a media file, pick model + language, transcribe with live progress, view/download the transcript (txt; srt/vtt in Phase 2), and browse a searchable history. Both the GUI and the CLI call one in-process seam so the CLI stays unchanged.
-**Stack:** Python ≥3.10 (dev `.venv`: 3.12.4; Docker: 3.11) · openai-whisper 20250625 · Gradio 4.44.1 (`gradio>=4.44,<5`) · moviepy · pyannote.audio (optional) · Ollama (optional) · pytest
+**Stack:** Python ≥3.10 (dev `.venv`: 3.12.4; Docker: 3.11) · openai-whisper 20250625 · Gradio 4.44.1 (`gradio>=4.44,<5`) · ffmpeg (only media tool; `imageio-ffmpeg` fallback binary — D-012) · pyannote.audio (optional) · Ollama (optional) · pytest
 **Commands:** test `python -m pytest -q` · lint `(none configured)` · typecheck `(none configured)` · build/GUI-smoke `python -m pytest tests/test_app_smoke.py -q` (app is interpreted — no compile step)
 
 > **Adopted at** `cd888bf` (branch `feat/web-gui`) · 2026-06-21 — historical: that branch was squash-merged into `main` (#12), so adoption-era SHAs no longer exist in history. **Integration branch is `main`** (D-006). Actualized at `87c5ab2` · 2026-09-28. See `docs/BUILD-STATE.md` and `docs/DECISIONS.md` (D-002, D-006) for the baseline.
