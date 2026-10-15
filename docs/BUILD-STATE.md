@@ -35,3 +35,26 @@
 [C-005 | src/utils/ffmpeg_tools.py — probe_media/MediaInfo, get_media_duration_seconds, extract_audio, decode_to_array | STATUS: done — branch feat/ffmpeg-tools off fe9f173 (main). New module + tests only; no existing source touched (pipeline wiring is C-006).
  NAMED TESTS: tests/test_ffmpeg_tools.py (44: canned-stderr parser cases incl. attached pic / Duration N/A / "Output #" in name+tag / Duration in metadata; real-ffmpeg probe of mp4/mute mp4/wav/flac/aac/ogg/mp3+cover/garbage/missing/Cyrillic; extract wav/flac/mp3 16k mono, .part cleanup; decode bit-identical to whisper.audio.load_audio). PROOF: RED = ImportError, then 5 regression tests red before the anchoring fix; GREEN 44/44; module removed -> collection error; mutations (cover-as-video, non-whisper decode, no .part cleanup, unanchored Output) each caught. GATE: adversarial reviewer round 1 — 1 blocker (unanchored "Output #") + 1 major (Duration from metadata), fixed with regression tests; round 2 — SHIP-READY, 0 blockers; 4 minors deferred (D-011).
  DOCS: D-011; CODEBASE-MAP (new module); plan §4.4/C-006 corrected separately (4th format list = transcribe wrapper, found in #40). AUDIT: unchanged (no INV touched yet). GREEN: 155 passed, 1 skipped. NEXT UP: C-006 — wire ffmpeg_tools in, drop moviepy, probe-based input-format gate (incl. transcribe wrapper + .wav etc.).]
+
+[GH-27 | one GPU slot: Whisper and pyannote never co-resident on CUDA (issue #27) | STATUS: done — branch fix/27-gpu-model-swap off 85d65f4 (main).
+ ROOT CAUSE (confirmed against source): `transcribe_file` loaded both models before `pipeline.run` and cached both in module globals. The local `whisper_model` and `TranscriptionStep._model` kept Whisper pinned in VRAM during diarization.
+ FIX: in `src/service.py`, `get_whisper_model` and `get_diarization_backend` evict each other on `cuda*` (`_swaps_gpu_models`). `DiarizationStep(backend_loader=...)` loads lazily inside its try, so degradation is unchanged. `TranscriptionStep(model_loader=...)`. The eager Whisper load is kept so failure semantics stay the same. CPU is unchanged. D-013.
+ NAMED TESTS:
+ - `tests/test_service.py::TestGpuModelSwap` (6): `test_cuda_pyannote_load_frees_whisper`, `test_cuda_whisper_load_frees_pyannote`, `test_cpu_keeps_both_models_cached` (regression guard, green at HEAD), `test_cuda_job_loads_pyannote_after_transcription_with_whisper_freed`, `test_cuda_batch_swaps_models_without_pinning_either`, `test_cuda_empty_cache_runs_after_whisper_refs_dropped`.
+ - `tests/test_diarization_step.py`: `test_backend_loader_called_lazily_on_execute`, `test_backend_loader_failure_degrades`.
+ PROOF:
+ - RED: 5 failing for the right reason (other model alive at load: `[True]`; pyannote loaded before transcription; `backend_loader` missing).
+ - GREEN: 161, then 163 passed / 1 skipped.
+ - Independent verify: the 3 production files reverted to HEAD with the tests kept gives 5 failed (7 with the 2 tests ported from the gate; recounted by the verdict-auditor), then restored.
+ GATE:
+ - Skeptic 1 (mocks/invariants, 8 attack tests): 0 blockers, 0 majors. Minors: no D-NNN for the reload trade-off (now D-013); weak e2e test, missing empty_cache-order and real-asr_engine coverage (2 tests ported); stale comments (fixed).
+ - Verdict-auditor: SHIP-READY, 0 blockers, 0 majors; minors fixed (stale INV-2/INV-6 line refs, verify count, AUDIT row) or noted (gc on CPU cache miss; theoretical re-load failure inside TranscriptionStep would yield "failed" instead of raising).
+ - Skeptic 2 (real RTX 4060 8 GB, torch 2.14 cu132, pyannote 4.0.7): at pyannote load 0.01 GB and Whisper freed; pyannote freed on reverse; large-v3 two-file e2e succeeds.
+ - MAJOR outside scope: large-v3 alone peaks at 8.75 GB during transcription, so #27 is only partially solved (D-013 follow-up).
+ - Minors accepted: per-file reload on CUDA (~12 s large-v3); Whisper evicted even when pyannote fails to load.
+ DOCS: D-013; CLAUDE.md INV-3 wording (per D-013); AUDIT INV-3 row; SYSTEM-SPEC and CODEBASE-MAP INV-3 refs; INV-2/INV-6 line refs re-pointed (shifted by this diff).
+ PENDING:
+ - DONE 2026-10-16 (human, RTX 4060 Laptop 8 GB, CLI `main.py --type audio --diarize`, 30.3 min .aac, large-v3, ru): "Evicting Whisper model 'large-v3'" logged at DiarizationStep start; pyannote loaded on cuda in 1.9 s; embeddings 0:00:49 (issue: ~30 min); whole diarization 56 s; 3 speakers / 328 turns; transcript saved, status success. Transcription itself took 20:43 for 1817 s of audio (~1.5x real time), consistent with the 8.75 GB large-v3 spill: evidence for the fp16 follow-up.
+ - GUI run under a real Gradio queue.
+ GREEN: 163 passed, 1 skipped.
+ NEXT UP: human reviews and merges the GH-27 PR (it fixes the diarization half of #27, verified live). Then the fp16 Whisper-on-CUDA chunk (transcription peak 8.75 GB). Rebase conflict expected with the C-006 PR (feat/ffmpeg-gate) in `transcribe_file`.]

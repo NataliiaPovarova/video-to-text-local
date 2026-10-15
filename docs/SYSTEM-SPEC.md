@@ -23,11 +23,11 @@ A local, single-user Gradio web GUI over an existing Whisper transcription pipel
 ## Invariants (authoritative list — mirrors CLAUDE.md §5; see AUDIT.md for test status)
 
 - INV-1 — CLI parity (`main.py:48-135`).
-- INV-2 — `params.yaml` never mutated at runtime (`src/service.py:125-141`).
-- INV-3 — single resident Whisper model, evict-before-load (`src/service.py:40-76`).
+- INV-2 — `params.yaml` never mutated at runtime (`src/service.py:152-168`).
+- INV-3 — single resident Whisper model, evict-before-load; on CUDA one GPU slot shared with the lazily loaded diarization backend (D-013) (`src/service.py:55-148`).
 - INV-4 — one transcription at a time, `queue(default_concurrency_limit=1)` (`app.py:280`). *(PENDING test.)*
 - INV-5 — local-only `127.0.0.1` bind, no auth/cloud (`app.py:281`). *(PENDING test.)*
-- INV-6 — Unicode/Arabic-safe, collision-safe filenames (`src/utils/naming.py`; applied `src/service.py:191-192`).
+- INV-6 — Unicode/Arabic-safe, collision-safe filenames (`src/utils/naming.py`; applied `src/service.py:217-218`).
 - INV-7 — crash-safe, non-ASCII-preserving history index (`src/history.py:33,46-48`).
 - INV-8 — auto-detect records the real language, never blank (`src/transcription/asr_engine.py:137`).
 - INV-9 — GUI install never downgrades numpy/torch/whisper (`requirements-gui.txt`). *(PENDING automated test.)*
