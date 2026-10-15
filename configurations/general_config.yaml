@@ -10,16 +10,30 @@ files:
   diarization: "configurations/diarization.yaml"
 
 extensions:
+  # Which files the CLI picks up from videos/ and audios/ and the GUI offers to
+  # upload. A convenience list only: any file ffmpeg can read that has an audio
+  # track is accepted, and video vs audio is decided by probing the file.
   video:
     - ".mp4"
     - ".mov"
     - ".avi"
     - ".mkv"
     - ".webm"
+    - ".m4v"
+    - ".wmv"
+    - ".flv"
+    - ".ts"
+    - ".mpg"
   audio:
     - ".mp3"
     - ".m4a"
     - ".aac"
+    - ".wav"
+    - ".flac"
+    - ".ogg"
+    - ".opus"
+    - ".wma"
+    - ".aiff"
 
 output:
   transcript_extension: ".txt"

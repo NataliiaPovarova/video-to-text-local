@@ -5,6 +5,10 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
 from pathlib import Path
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from src.utils.ffmpeg_tools import MediaInfo
 
 
 class PipelineState(str, Enum):
@@ -71,6 +75,7 @@ class PipelineContext:
     input_type: str  # "video" | "audio"
     language: str = "ru"
     audio_path: Path | None = None
+    media: MediaInfo | None = None  # ffmpeg probe of source_path, set once at the seam
     document: TranscriptDocument | None = None
     cleaned_text: str | None = None
     errors: list[str] = field(default_factory=list)

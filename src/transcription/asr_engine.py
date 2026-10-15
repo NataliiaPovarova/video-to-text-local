@@ -10,24 +10,13 @@ from pathlib import Path
 from tqdm import tqdm
 
 from src.models import PipelineState, TranscriptDocument, TranscriptSegment
-
-try:
-    from moviepy import AudioFileClip
-except ImportError:
-    try:
-        from moviepy.editor import AudioFileClip  # type: ignore[no-redef]
-    except ImportError:
-        AudioFileClip = None  # type: ignore[misc, assignment]
+from src.utils.ffmpeg_tools import get_media_duration_seconds
 
 
 def _get_audio_duration_seconds(audio_path: str) -> float | None:
-    if AudioFileClip is None:
-        return None
-    try:
-        with AudioFileClip(audio_path) as clip:
-            return float(clip.duration) if clip.duration else None
-    except Exception:
-        return None
+    """Media duration for the progress bar; None when ffmpeg reports none."""
+    duration = get_media_duration_seconds(audio_path)
+    return duration if duration and duration > 0 else None
 
 
 def _estimate_fraction(elapsed_seconds: float, total_seconds: float) -> float:

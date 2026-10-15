@@ -47,8 +47,8 @@ class TestEnsureFfmpegOnPath:
     defaults ``dependencies.ffmpeg_executable`` to ``"ffmpeg"`` too. On a
     machine without a system ffmpeg (the GUI-hang bug), nothing was ever put
     on PATH, so transcription died with FileNotFoundError. ensure_ffmpeg_on_path
-    falls back to the binary already bundled with imageio-ffmpeg (a moviepy
-    dependency), exposing it under the name ``ffmpeg`` on PATH.
+    falls back to the binary shipped by the imageio-ffmpeg dependency,
+    exposing it under the name ``ffmpeg`` on PATH.
     """
 
     def _fake_binary(self, path: Path) -> Path:

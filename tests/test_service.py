@@ -2,6 +2,16 @@ from pathlib import Path
 
 import src.service as service
 from src.models import PipelineState, TranscriptDocument, TranscriptSegment
+from src.utils.ffmpeg_tools import MediaInfo
+
+AUDIO_INFO = MediaInfo(True, True, 1.0, 1, 0, "mp3", 44100, "mono")
+VIDEO_INFO = MediaInfo(True, True, 1.0, 1, 1, "aac", 44100, "mono")
+MUTE_VIDEO_INFO = MediaInfo(True, False, 1.0, 0, 1, None, None, None)
+
+
+def _stub_probe(monkeypatch, info=AUDIO_INFO):
+    """Replace the seam's ffmpeg probe (tests use fake bytes, not real media)."""
+    monkeypatch.setattr(service, "probe_media", lambda path, ffmpeg="ffmpeg": info)
 
 
 def _stub_doc():
@@ -74,7 +84,7 @@ class TestTranscribeFile:
         cfg = _tmp_config(tmp_path)
         src_audio = tmp_path / "clip.mp3"
         src_audio.write_bytes(b"x")
-        monkeypatch.setattr("src.pipeline.steps_ingestion._probe_duration", lambda p: 1.0)  # skip real decode probe
+        _stub_probe(monkeypatch)  # skip real ffmpeg probe
 
         result = service.transcribe_file(
             src_audio, model="base", language="en", config_path=cfg, sanitize_output=True
@@ -91,7 +101,7 @@ class TestTranscribeFile:
         before = params_file.read_text(encoding="utf-8")
         src_audio = tmp_path / "clip.mp3"
         src_audio.write_bytes(b"x")
-        monkeypatch.setattr("src.pipeline.steps_ingestion._probe_duration", lambda p: 1.0)
+        _stub_probe(monkeypatch)
         service.transcribe_file(src_audio, model="large-v3", language="en", config_path=cfg, sanitize_output=True)
         assert params_file.read_text(encoding="utf-8") == before
 
@@ -112,7 +122,7 @@ class TestTranscribeFile:
         cfg = _tmp_config(tmp_path)
         src_audio = tmp_path / "clip.aac"
         src_audio.write_bytes(b"x")
-        monkeypatch.setattr("src.pipeline.steps_ingestion._probe_duration", lambda p: 1.0)
+        _stub_probe(monkeypatch)
 
         result = service.transcribe_file(
             src_audio, model="base", language="en", config_path=cfg, sanitize_output=True
@@ -156,7 +166,7 @@ class TestTranscribeFile:
         cfg = _tmp_config(tmp_path)
         src_audio = tmp_path / "clip.mp3"
         src_audio.write_bytes(b"x")
-        monkeypatch.setattr("src.pipeline.steps_ingestion._probe_duration", lambda p: 1.0)
+        _stub_probe(monkeypatch)
 
         from src.utils import ProcessingError
 
@@ -183,7 +193,7 @@ class TestTranscribeFile:
         cfg = _tmp_config(tmp_path)
         src_audio = tmp_path / "clip.mp3"
         src_audio.write_bytes(b"x")
-        monkeypatch.setattr("src.pipeline.steps_ingestion._probe_duration", lambda p: 1.0)
+        _stub_probe(monkeypatch)
         # diarization config loads fine, but constructing the backend blows up
         monkeypatch.setattr(service, "load_diarization_config", lambda path: MagicMock(enabled=False))
 
@@ -218,7 +228,7 @@ class TestTranscribeFile:
         cfg = _tmp_config(tmp_path)
         src_audio = tmp_path / "clip.mp3"
         src_audio.write_bytes(b"x")
-        monkeypatch.setattr("src.pipeline.steps_ingestion._probe_duration", lambda p: 1.0)
+        _stub_probe(monkeypatch)
         monkeypatch.setattr(service, "load_diarization_config", lambda path: MagicMock(enabled=False))
         monkeypatch.setattr(service, "get_diarization_backend", lambda *a, **k: object())
 
@@ -249,7 +259,7 @@ class TestTranscribeFile:
         cfg = _tmp_config(tmp_path)
         src_audio = tmp_path / "clip.mp3"
         src_audio.write_bytes(b"x")
-        monkeypatch.setattr("src.pipeline.steps_ingestion._probe_duration", lambda p: 1.0)
+        _stub_probe(monkeypatch)
         monkeypatch.setattr(service, "load_diarization_config", lambda path: MagicMock(enabled=False))
         monkeypatch.setattr(service, "get_diarization_backend", lambda *a, **k: object())
 
@@ -281,7 +291,7 @@ class TestTranscribeFile:
         monkeypatch.setattr(service.whisper, "load_model", lambda name, device=None: mock_model)
         monkeypatch.setattr(service, "_resolve_device", lambda logger: "cpu")
         # AudioIngestionStep probes decodability (Task 4); force it to pass.
-        monkeypatch.setattr("src.pipeline.steps_ingestion._probe_duration", lambda p: 1.0)
+        _stub_probe(monkeypatch)
 
         cfg = _tmp_config(tmp_path)
         src_audio = tmp_path / "clip.mp3"
@@ -341,3 +351,121 @@ def _tmp_config(tmp_path) -> str:
         encoding="utf-8",
     )
     return str(cfg)
+
+
+class TestInputFormatGate:
+    """C-006 / plan §4.4: the seam accepts a file because ffmpeg finds audio in
+    it, not because of its extension; video vs audio is decided by the probe."""
+
+    def setup_method(self):
+        service.reset_caches()
+
+    def teardown_method(self):
+        service.reset_caches()
+
+    def _run(self, monkeypatch, tmp_path, name, info):
+        TestTranscribeFile()._patch(monkeypatch)
+        _stub_probe(monkeypatch, info)
+        src = tmp_path / name
+        src.write_bytes(b"x")
+        return service.transcribe_file(src, model="base", language="en", config_path=_tmp_config(tmp_path))
+
+    def test_wav_is_accepted(self, monkeypatch, tmp_path):
+        # The reported bug: CLI discovery found clip.wav, the seam rejected it.
+        assert self._run(monkeypatch, tmp_path, "clip.wav", AUDIO_INFO).status == "success"
+
+    def test_extension_does_not_decide_acceptance(self, monkeypatch, tmp_path):
+        assert self._run(monkeypatch, tmp_path, "clip.opus", AUDIO_INFO).status == "success"
+
+    def test_no_audio_track_raises_media_decode_error(self, monkeypatch, tmp_path):
+        import pytest
+
+        from src.utils import MediaDecodeError
+
+        with pytest.raises(MediaDecodeError, match="no audio track"):
+            self._run(monkeypatch, tmp_path, "silent.mp4", MUTE_VIDEO_INFO)
+
+    def test_unreadable_raises_media_decode_error(self, monkeypatch, tmp_path):
+        import pytest
+
+        from src.utils import MediaDecodeError
+
+        with pytest.raises(MediaDecodeError, match="Could not read"):
+            self._run(monkeypatch, tmp_path, "clip.mp3", MediaInfo.unreadable())
+
+    def test_audio_only_container_is_not_extracted(self, monkeypatch, tmp_path):
+        # .mkv holding only audio: the probe says audio -> no video extraction.
+        def no_video_step(*a, **k):
+            raise AssertionError("VideoIngestionStep must not be used for audio-only media")
+
+        monkeypatch.setattr(service, "VideoIngestionStep", no_video_step)
+        assert self._run(monkeypatch, tmp_path, "music.mkv", AUDIO_INFO).status == "success"
+
+    def test_video_is_extracted_even_with_audio_extension(self, monkeypatch, tmp_path):
+        calls = []
+
+        def fake_extract(src, out, ffmpeg="ffmpeg"):
+            calls.append(Path(src).name)
+            Path(out).write_bytes(b"audio")
+            return Path(out)
+
+        monkeypatch.setattr("src.pipeline.steps_ingestion.extract_audio", fake_extract)
+        assert self._run(monkeypatch, tmp_path, "weird.mp3", VIDEO_INFO).status == "success"
+        assert calls == ["weird.mp3"]
+
+    def test_steps_reuse_the_seam_probe(self, monkeypatch, tmp_path):
+        # One probe per file: ingestion steps read context.media, not ffmpeg again.
+        def must_not_probe(*a, **k):
+            raise AssertionError("ingestion re-probed the file")
+
+        monkeypatch.setattr("src.pipeline.steps_ingestion.probe_media", must_not_probe)
+        assert self._run(monkeypatch, tmp_path, "clip.wav", AUDIO_INFO).status == "success"
+
+
+class TestInputFormatGateRealFfmpeg:
+    """Same gate against real files generated by ffmpeg (no stubbed probe)."""
+
+    def _make(self, path, *args):
+        import shutil
+        import subprocess
+
+        import pytest
+
+        ffmpeg = shutil.which("ffmpeg")
+        if ffmpeg is None:
+            pytest.skip("no system ffmpeg")
+        subprocess.run([ffmpeg, "-hide_banner", "-loglevel", "error", "-y", *args, str(path)], check=True)
+        return path
+
+    def test_real_wav_flac_ogg_are_transcribed(self, monkeypatch, tmp_path):
+        TestTranscribeFile()._patch(monkeypatch)
+        cfg = _tmp_config(tmp_path)
+        for name in ("clip.wav", "clip.flac", "clip.ogg"):
+            src = self._make(tmp_path / name, "-f", "lavfi", "-i", "sine=duration=1")
+            assert service.transcribe_file(src, model="base", language="en", config_path=cfg).status == "success", name
+
+    def test_real_mute_video_is_rejected(self, monkeypatch, tmp_path):
+        import pytest
+
+        from src.utils import MediaDecodeError
+
+        TestTranscribeFile()._patch(monkeypatch)
+        src = self._make(tmp_path / "mute.mp4", "-f", "lavfi", "-i", "testsrc=duration=1:size=64x48:rate=5")
+        with pytest.raises(MediaDecodeError, match="no audio track"):
+            service.transcribe_file(src, model="base", language="en", config_path=_tmp_config(tmp_path))
+
+
+def test_config_lists_common_formats():
+    # One extension list (config) feeds CLI discovery, the GUI picker and the
+    # transcribe wrapper; it is a convenience list, the probe is the gate.
+    from src.utils import load_yaml_file
+
+    ext = load_yaml_file("configurations/general_config.yaml")["extensions"]
+    for e in (".mp3", ".m4a", ".aac", ".wav", ".flac", ".ogg", ".opus"):
+        assert e in ext["audio"], e
+    for e in (".mp4", ".mov", ".avi", ".mkv", ".webm"):
+        assert e in ext["video"], e
+
+
+def test_seam_has_no_hardcoded_extension_lists():
+    assert not hasattr(service, "_VIDEO_EXTS") and not hasattr(service, "_AUDIO_EXTS")

@@ -7,8 +7,10 @@ Linux.
 """
 from __future__ import annotations
 
+import argparse
 import re
 import subprocess
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -33,7 +35,8 @@ _LAYOUT_RE = re.compile(r"\d+ Hz,\s*([^,]+)")
 _EXTRACT_CODEC_ARGS = {
     ".wav": ["-ac", "1", "-ar", str(SAMPLE_RATE), "-c:a", "pcm_s16le"],
     ".flac": ["-ac", "1", "-ar", str(SAMPLE_RATE), "-c:a", "flac"],
-    ".mp3": ["-c:a", "libmp3lame", "-q:a", "2"],
+    # Same settings moviepy used before it was dropped (C-006): 44.1 kHz stereo, 128 kb/s.
+    ".mp3": ["-ar", "44100", "-ac", "2", "-c:a", "libmp3lame", "-b:a", "128k"],
 }
 
 
@@ -195,3 +198,46 @@ def decode_to_array(
         raise MediaDecodeError(f"Could not decode '{Path(path).name}': {detail}")
     # .astype() copies, so the result is writable (np.frombuffer alone is read-only).
     return np.frombuffer(r.stdout, np.int16).flatten().astype(np.float32) / 32768.0
+
+
+def classify_media(info: MediaInfo, name: str | None = None) -> str:
+    """Return "video" or "audio" for an accepted file; raise for a rejected one.
+
+    The acceptance gate of plan §4.4: a file is accepted when ffmpeg can read
+    it and finds an audio stream -- the extension does not matter. It is a
+    video when it has a real video stream (cover art does not count).
+    """
+    what = f"'{name}'" if name else "the file"
+    if not info.readable:
+        raise MediaDecodeError(
+            f"Could not read/decode {what}: it may be corrupt, truncated, or not a media file."
+        )
+    if not info.has_audio:
+        raise MediaDecodeError(f"Could not read/decode {what}: it has no audio track.")
+    return "video" if info.is_video else "audio"
+
+
+def main(argv: list[str] | None = None) -> int:
+    """``python -m src.utils.ffmpeg_tools classify <file>`` -> prints video|audio.
+
+    Used by the bash ``transcribe`` wrapper so it shares the pipeline's gate
+    instead of keeping its own extension list.
+    """
+    parser = argparse.ArgumentParser(prog="python -m src.utils.ffmpeg_tools")
+    sub = parser.add_subparsers(dest="command", required=True)
+    cls = sub.add_parser("classify", help="print 'video' or 'audio'; exit 1 if the file is not usable")
+    cls.add_argument("path")
+    cls.add_argument("--ffmpeg", default="ffmpeg")
+    args = parser.parse_args(argv)
+
+    try:
+        kind = classify_media(probe_media(args.path, args.ffmpeg), Path(args.path).name)
+    except MediaDecodeError as exc:
+        print(exc, file=sys.stderr)
+        return 1
+    print(kind)
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
