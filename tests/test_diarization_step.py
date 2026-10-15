@@ -61,6 +61,41 @@ class TestDiarizationStep:
         assert result.document.pipeline_state == PipelineState.DIARIZED
         mock_diarize.assert_called_once()
 
+    @patch("src.pipeline.steps_diarization.diarize_document")
+    def test_backend_loader_called_lazily_on_execute(self, mock_diarize):
+        # Issue #27: the backend (pyannote, GPU-resident) must load when the
+        # step runs, after transcription -- not when the pipeline is assembled.
+        mock_diarize.side_effect = lambda **kw: kw["document"]
+        backend = MockBackend()
+        calls = []
+
+        def loader():
+            calls.append(1)
+            return backend
+
+        step = DiarizationStep(None, _config(), backend_loader=loader)
+        assert calls == []  # nothing loaded at construction
+        step.execute(self._context(), logging.getLogger("test"))
+        assert calls == [1]
+        assert mock_diarize.call_args.kwargs["backend"] is backend
+
+    def test_backend_loader_failure_degrades(self):
+        # Backend load (HF auth / download / CUDA) now happens inside the
+        # step; its failure must degrade exactly like an in-step diarization
+        # failure: raw transcript kept, warning recorded, pipeline not failed.
+        def boom():
+            raise RuntimeError("HF auth failed")
+
+        ctx = self._context()
+        step = DiarizationStep(None, _config(), backend_loader=boom)
+        result = step.execute(ctx, logging.getLogger("test"))
+
+        assert result.errors == []
+        assert result.exception is None
+        assert result.document.pipeline_state == PipelineState.TRANSCRIBED
+        warnings = result.document.metadata.get("warnings", [])
+        assert any("diariz" in w.lower() for w in warnings)
+
     def test_should_skip_when_disabled(self):
         step = DiarizationStep(MockBackend(), _config(enabled=False))
         assert step.should_skip(self._context()) is True

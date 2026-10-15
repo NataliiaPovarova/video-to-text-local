@@ -11,8 +11,20 @@ from .steps import PipelineStep
 class TranscriptionStep(PipelineStep):
     """Run Whisper ASR on the audio file."""
 
-    def __init__(self, whisper_model, progress_update_interval: float, *, progress_callback=None) -> None:
+    def __init__(
+        self,
+        whisper_model=None,
+        progress_update_interval: float = 1.0,
+        *,
+        progress_callback=None,
+        model_loader=None,
+    ) -> None:
+        # ``model_loader`` (a zero-arg callable) lets the step hold no model
+        # reference between runs, so the service can evict it from VRAM.
+        if (whisper_model is None) == (model_loader is None):
+            raise ValueError("Pass exactly one of whisper_model or model_loader")
         self._model = whisper_model
+        self._model_loader = model_loader
         self._interval = progress_update_interval
         self._progress_callback = progress_callback
 
@@ -22,7 +34,7 @@ class TranscriptionStep(PipelineStep):
             return context
 
         document = transcribe_audio(
-            model=self._model,
+            model=self._model if self._model is not None else self._model_loader(),
             audio_path=context.audio_path,
             language=context.language,
             progress_update_interval_seconds=self._interval,

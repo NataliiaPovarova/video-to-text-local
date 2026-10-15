@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable
 from pathlib import Path
 
 from src.models import PipelineContext, PipelineState
@@ -16,14 +17,22 @@ class DiarizationStep(PipelineStep):
 
     def __init__(
         self,
-        backend: DiarizationBackend,
-        config: DiarizationConfig,
+        backend: DiarizationBackend | None = None,
+        config: DiarizationConfig | None = None,
         *,
+        backend_loader: Callable[[], DiarizationBackend] | None = None,
         work_dir: Path | None = None,
         ffmpeg_executable: str = "ffmpeg",
         num_speakers_override: int | None = None,
     ) -> None:
+        # ``backend_loader`` defers loading (pyannote, GPU-resident) until the
+        # step runs, i.e. after transcription -- see issue #27.
+        if (backend is None) == (backend_loader is None):
+            raise ValueError("Pass exactly one of backend or backend_loader")
+        if config is None:
+            raise ValueError("config is required")
         self._backend = backend
+        self._backend_loader = backend_loader
         self._config = config
         self._work_dir = work_dir
         self._ffmpeg_executable = ffmpeg_executable
@@ -51,12 +60,13 @@ class DiarizationStep(PipelineStep):
         # pristine here), record a warning, and let the pipeline continue to
         # OutputStep -- never abort the whole job. Catch broadly because the
         # pyannote/HF backend failure surface is wide (auth, download, CUDA,
-        # audio decode, model format).
+        # audio decode, model format) -- lazy backend loading included.
         try:
+            backend = self._backend if self._backend is not None else self._backend_loader()
             context.document = diarize_document(
                 document=context.document,
                 audio_path=context.audio_path,
-                backend=self._backend,
+                backend=backend,
                 config=self._config,
                 logger=logger,
                 work_dir=self._work_dir,
