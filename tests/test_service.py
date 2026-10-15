@@ -1,4 +1,8 @@
+import gc
+import logging
+import weakref
 from pathlib import Path
+from types import SimpleNamespace
 
 import src.service as service
 from src.models import PipelineState, TranscriptDocument, TranscriptSegment
@@ -45,6 +49,210 @@ class TestModelCache:
         service.get_whisper_model("large-v3", "cpu")
         assert loads == ["base", "large-v3"]
         assert collected  # eviction ran gc.collect at least once
+
+
+class _FakeModel:
+    """Stand-in for a GPU-resident model; weakref-able so a test can prove it
+    was actually freed (no lingering reference), not just dropped from a cache."""
+
+    def __init__(self, name):
+        self.name = name
+
+
+class TestGpuModelSwap:
+    # Issue #27: on an 8 GB GPU, Whisper large-v3 and pyannote co-resident in
+    # VRAM overflow into shared system memory (the Windows driver spills
+    # instead of raising OOM) and diarization slows ~15x. On CUDA at most one
+    # heavy model may be resident at a time; on CPU both stay cached.
+    _CFG = SimpleNamespace(backend="pyannote", model="pyannote/speaker-diarization-3.1")
+
+    def setup_method(self):
+        service.reset_caches()
+
+    def teardown_method(self):
+        service.reset_caches()
+
+    def test_cuda_pyannote_load_frees_whisper(self, monkeypatch):
+        refs = []
+
+        def fake_load(name, device=None):
+            model = _FakeModel(name)
+            refs.append(weakref.ref(model))
+            return model
+
+        alive_at_load = []
+
+        def fake_create(config, device, logger):
+            gc.collect()
+            alive_at_load.append(refs[0]() is not None)
+            return _FakeModel("pyannote")
+
+        monkeypatch.setattr(service.whisper, "load_model", fake_load)
+        monkeypatch.setattr(service, "create_diarization_backend", fake_create)
+        monkeypatch.setattr(service, "_empty_cuda_cache", lambda: None)
+        log = logging.getLogger("test")
+
+        service.get_whisper_model("large-v3", "cuda", log)  # result not kept
+        service.get_diarization_backend(self._CFG, "cuda", log)
+        assert alive_at_load == [False]
+
+    def test_cuda_whisper_load_frees_pyannote(self, monkeypatch):
+        refs = []
+
+        def fake_create(config, device, logger):
+            backend = _FakeModel("pyannote")
+            refs.append(weakref.ref(backend))
+            return backend
+
+        alive_at_load = []
+
+        def fake_load(name, device=None):
+            gc.collect()
+            alive_at_load.append(refs[0]() is not None)
+            return _FakeModel(name)
+
+        monkeypatch.setattr(service.whisper, "load_model", fake_load)
+        monkeypatch.setattr(service, "create_diarization_backend", fake_create)
+        monkeypatch.setattr(service, "_empty_cuda_cache", lambda: None)
+        log = logging.getLogger("test")
+
+        service.get_diarization_backend(self._CFG, "cuda", log)  # result not kept
+        service.get_whisper_model("large-v3", "cuda", log)
+        assert alive_at_load == [False]
+
+    def test_cpu_keeps_both_models_cached(self, monkeypatch):
+        # Regression guard: RAM is plentiful on CPU, so no swapping -- a batch
+        # must not reload either model per file.
+        loads, creates = [], []
+        monkeypatch.setattr(service.whisper, "load_model", lambda name, device=None: (loads.append(name) or _FakeModel(name)))
+        monkeypatch.setattr(service, "create_diarization_backend", lambda c, d, l: (creates.append(1) or _FakeModel("pyannote")))
+        log = logging.getLogger("test")
+
+        for _ in range(2):
+            service.get_whisper_model("base", "cpu", log)
+            service.get_diarization_backend(self._CFG, "cpu", log)
+        assert loads == ["base"]
+        assert creates == [1]
+
+    def test_cuda_job_loads_pyannote_after_transcription_with_whisper_freed(self, monkeypatch, tmp_path):
+        # End-to-end through the seam: pyannote must not be loaded up-front
+        # (it was, at service setup, before the pipeline ran), and by the time
+        # it loads no reference to the Whisper model may survive -- neither in
+        # transcribe_file's locals nor in TranscriptionStep.
+        from unittest.mock import MagicMock
+
+        events, refs, alive_at_load = [], [], []
+
+        def fake_load(name, device=None):
+            events.append("load_whisper")
+            model = _FakeModel(name)
+            refs.append(weakref.ref(model))
+            return model
+
+        def fake_transcribe(model, audio_path, language, progress_update_interval_seconds, logger, progress_callback=None):
+            events.append("transcribe")
+            doc = _stub_doc()
+            doc.source_file = str(audio_path)
+            return doc
+
+        def fake_create(config, device, logger):
+            gc.collect()
+            events.append("load_pyannote")
+            alive_at_load.append(any(r() is not None for r in refs))
+            return _FakeModel("pyannote")
+
+        def fake_diarize(*, document, **kwargs):
+            document.metadata["diarization"] = {"backend": "mock", "num_speakers_detected": 1}
+            return document
+
+        monkeypatch.setattr(service.whisper, "load_model", fake_load)
+        monkeypatch.setattr(service, "_resolve_device", lambda logger: "cuda")
+        monkeypatch.setattr(service, "_empty_cuda_cache", lambda: None)
+        monkeypatch.setattr("src.pipeline.steps_transcription.transcribe_audio", fake_transcribe)
+        monkeypatch.setattr("src.pipeline.steps_ingestion._probe_duration", lambda p: 1.0)
+        monkeypatch.setattr(
+            service, "load_diarization_config",
+            lambda path: MagicMock(enabled=False, backend="pyannote", model="m"),
+        )
+        monkeypatch.setattr(service, "create_diarization_backend", fake_create)
+        monkeypatch.setattr("src.pipeline.steps_diarization.diarize_document", fake_diarize)
+
+        cfg = _tmp_config(tmp_path)
+        src_audio = tmp_path / "clip.mp3"
+        src_audio.write_bytes(b"x")
+        result = service.transcribe_file(
+            src_audio, model="large-v3", language="en", diarize=True,
+            config_path=cfg, sanitize_output=True,
+        )
+        assert result.status == "success"
+        assert events == ["load_whisper", "transcribe", "load_pyannote"]
+        assert alive_at_load == [False]
+
+    def _patch_real_asr(self, monkeypatch, device="cuda"):
+        # Real transcribe_audio (with its progress ticker thread running) over a
+        # weakref-able fake Whisper; records, at every model load, whether the
+        # OTHER model is still alive.
+        from unittest.mock import MagicMock
+
+        class FakeWhisper(_FakeModel):
+            def transcribe(self, audio, **kw):
+                return {"text": "hi", "language": "en", "segments": [{"text": "hi", "start": 0.0, "end": 1.0}]}
+
+        wrefs, brefs, events = [], [], []
+
+        def fake_load(name, device=None):
+            gc.collect()
+            events.append(("load_whisper", any(r() is not None for r in brefs)))
+            model = FakeWhisper(name)
+            wrefs.append(weakref.ref(model))
+            return model
+
+        def fake_create(config, device, logger):
+            gc.collect()
+            events.append(("load_pyannote", any(r() is not None for r in wrefs)))
+            backend = _FakeModel("pyannote")
+            brefs.append(weakref.ref(backend))
+            return backend
+
+        def fake_diarize(*, document, **kwargs):
+            document.metadata["diarization"] = {"backend": "mock", "num_speakers_detected": 1}
+            return document
+
+        monkeypatch.setattr(service.whisper, "load_model", fake_load)
+        monkeypatch.setattr(service, "_resolve_device", lambda logger: device)
+        monkeypatch.setattr(service, "_empty_cuda_cache", lambda: None)
+        monkeypatch.setattr("src.pipeline.steps_ingestion._probe_duration", lambda p: 1.0)
+        monkeypatch.setattr("src.transcription.asr_engine._get_audio_duration_seconds", lambda p: 2.0)
+        monkeypatch.setattr(
+            service, "load_diarization_config",
+            lambda path: MagicMock(enabled=False, backend="pyannote", model="m"),
+        )
+        monkeypatch.setattr(service, "create_diarization_backend", fake_create)
+        monkeypatch.setattr("src.pipeline.steps_diarization.diarize_document", fake_diarize)
+        return events, wrefs
+
+    def test_cuda_batch_swaps_models_without_pinning_either(self, monkeypatch, tmp_path):
+        events, _ = self._patch_real_asr(monkeypatch)
+        cfg = _tmp_config(tmp_path)
+        for n in ("a", "b", "c"):
+            p = tmp_path / f"{n}.mp3"
+            p.write_bytes(b"x")
+            result = service.transcribe_file(p, model="large-v3", diarize=True, config_path=cfg, progress_callback=lambda f: None)
+            assert result.status == "success"
+        # (event, other-model-still-alive): neither model is ever pinned.
+        assert events == [("load_whisper", False), ("load_pyannote", False)] * 3
+
+    def test_cuda_empty_cache_runs_after_whisper_refs_dropped(self, monkeypatch, tmp_path):
+        # torch.cuda.empty_cache() only returns blocks whose tensors are dead;
+        # it must run after the last Whisper reference is gone.
+        _, wrefs = self._patch_real_asr(monkeypatch)
+        seen = []
+        monkeypatch.setattr(service, "_empty_cuda_cache", lambda: seen.append([r() is None for r in wrefs]))
+        cfg = _tmp_config(tmp_path)
+        p = tmp_path / "a.mp3"
+        p.write_bytes(b"x")
+        service.transcribe_file(p, model="large-v3", diarize=True, config_path=cfg)
+        assert seen and seen[-1] == [True]  # the call before pyannote loads
 
 
 class TestTranscribeFile:
@@ -176,7 +384,8 @@ class TestTranscribeFile:
         # Backend creation (model load / HF auth) failing must degrade to a
         # warning with the raw transcript saved -- not raise out of
         # transcribe_file. Mirror of test_cleanup_failure_keeps_raw_and_warns
-        # for the diarization eager-load failure point.
+        # for the backend-load failure point (lazy, inside DiarizationStep
+        # since issue #27).
         from unittest.mock import MagicMock
 
         self._patch(monkeypatch)
@@ -237,8 +446,8 @@ class TestTranscribeFile:
         assert result.document.metadata.get("diarization") is not None
 
     def test_diarize_step_failure_keeps_transcript_and_warns(self, monkeypatch, tmp_path):
-        # Path B (vs the backend-setup path A above): backend setup SUCCEEDS, so
-        # DiarizationStep IS added, but diarize_document raises INSIDE the step.
+        # Path B (vs the backend-load path A above): backend load SUCCEEDS, but
+        # diarize_document raises INSIDE the step.
         # The step must degrade (warn + continue), and the service must still
         # classify the run as "warning" with the raw transcript saved -- proving
         # the metadata["diarization"]-absent signal works end-to-end for the

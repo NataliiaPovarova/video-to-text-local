@@ -73,3 +73,20 @@
 **Decision:** `src/utils/ffmpeg_tools.py` is the single home of ffmpeg subprocess calls. `probe_media` parses `ffmpeg -i` stderr with line-anchored patterns only (`^Input #0`, `^Output #`, `^\s*Duration:`, `^\s*Stream #…: Audio|Video:`), because filenames and metadata tags are printed in the same output — the gate found that an unanchored search made `Output #1.mp3` (or a title tag `Output #2 mix`) look audio-less and let a `comment=Duration: 00:45:00.00` tag (yt-dlp writes descriptions there) override the real duration. Cover art (`attached pic`) is not a video stream. `decode_to_array` with no filters reproduces `whisper.audio.load_audio` bit-for-bit (verified for aac/opus/vorbis/wma/5.1/multi-track). `ExtractionError` subclasses `ProcessingError`; decode failures raise `MediaDecodeError`.
 **Known, deferred (not bugs at this layer):** an invalid filter string surfaces as `MediaDecodeError` blaming the file, and length-changing filters are not rejected — both belong to preset validation in C-010; a still image probes `is_video=True` but has no audio, so the §4.4 gate rejects it anyway; `extract_audio(src, out)` with `out == src` overwrites the source (callers build `out` under `audios/`).
 **Out of scope:** wiring into the pipeline (C-006).
+
+## D-013 — one GPU slot on CUDA: Whisper and the diarization backend never co-resident (issue #27)
+**Context:** issue #27, reproduced from source at `85d65f4`. `transcribe_file` loaded Whisper and pyannote before the pipeline ran, and both stayed cached in module globals. On an 8 GB card (RTX 4060 Laptop) Whisper large-v3 in fp32 (5.88 GB of weights) plus pyannote overflowed VRAM. The Windows driver spills to shared memory instead of raising OOM, so `embeddings` took about 30 min instead of 1–2.
+**Decision:** INV-3 widens from "one resident Whisper" to "on CUDA, one resident heavy model". `get_whisper_model` evicts a cached diarization backend and `get_diarization_backend` evicts Whisper (drop the ref, then `gc.collect()`, then `torch.cuda.empty_cache()`), but only when the device is `cuda*`. On CPU both stay cached. Pyannote loads lazily inside `DiarizationStep` (`backend_loader`), after transcription. `TranscriptionStep` takes a `model_loader`, so no step or local holds the Whisper model. Whisper is still loaded eagerly in `transcribe_file`, so a bad model name still raises out of the seam as before.
+**Accepted trade-offs:**
+- On CUDA with diarization, every file reloads Whisper (large-v3 about 12 s from the OS file cache) and pyannote (under 1 s). This also applies to cards big enough to hold both.
+- With diarization requested but pyannote failing to load (no HF token / offline), Whisper is still evicted, so each file in a CUDA batch pays the reload for nothing.
+- Both are small against the 30-minute slowdown. Revisit with a VRAM-size check if they bite.
+**Measured (real RTX 4060, adversarial gate):**
+- At pyannote load: 0.01 GB allocated, Whisper weakref dead. Pyannote peak on 10 s of audio: 0.33 GB.
+- The reverse eviction and three load/evict cycles leave only 8.1 MB behind (cuBLAS workspace / `mel_filters` cache).
+- Live, 30.3 min audio on the same card (2026-10-16): embeddings 49 s (was ~30 min), whole diarization 56 s. Transcription took 20:43 (~1.5x real time); the remaining spill is the fp16 follow-up below.
+**Not solved here (separate chunk):** large-v3 alone peaks at **8.75 GB** allocated during transcription on this card (fp32 weights plus forward-time fp16 copies plus kv-cache). So transcription itself still spills on 8 GB; this fix covers the diarization half of #27. Follow-up: cast Whisper to fp16 on CUDA (`model.half()`, needs a LayerNorm/dtype check and an INV-1 output comparison).
+**Ruled out:**
+- Evicting only after `TranscriptionStep` inside the step: that fixes the call site, not the cache chokepoint.
+- faster-whisper `compute_type` from the issue: the project uses openai-whisper.
+- Moving the Whisper load inside the step: that would turn a bad model name from a raised error into a "failed" result, changing the seam's failure semantics.
