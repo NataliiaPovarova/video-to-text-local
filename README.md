@@ -3,7 +3,7 @@
 
 # Video / Audio Transcription with Local Whisper
 
-This project transcribes media using a locally hosted Whisper model, then optionally cleans the transcript with a local Ollama model. Videos have their audio track extracted first, while audio files (`.mp3`, `.m4a`, `.aac`) are sent straight to transcription. Outputs are saved to `transcripts/`, and execution logs are written to `logs/`.
+This project transcribes media using a locally hosted Whisper model, then optionally cleans the transcript with a local Ollama model. Videos have their audio track extracted first (with ffmpeg), while audio files are sent straight to transcription. Any file ffmpeg can read that contains an audio track is accepted (`.mp3`, `.m4a`, `.aac`, `.wav`, `.flac`, `.ogg`, …); whether it is treated as video or audio is decided by probing the file, not by its extension. Outputs are saved to `transcripts/`, and execution logs are written to `logs/`.
 
 > **Maintainers note:** when editing this file, please keep [`README.ru.md`](README.ru.md) in sync.
 
@@ -229,9 +229,11 @@ Diarization flags:
 
 > Each developer must use their own personal HF token. The `.env` file is gitignored — never commit it. A shell-exported `HF_TOKEN` (or one set at the OS level) still takes precedence over the `.env`, which is useful for CI/CD.
 
-**Supported extensions:**
-- Videos: `.mp4`, `.mov`, `.avi`, `.mkv`, `.webm`
-- Audio: `.mp3`, `.m4a`, `.aac`
+**Supported formats:** anything ffmpeg can read that has an audio track. The CLI picks up files from `videos/` and `audios/` by the extension list in `configurations/general_config.yaml` (`extensions`), which the GUI upload picker and the `transcribe` wrapper share:
+- Videos: `.mp4`, `.mov`, `.avi`, `.mkv`, `.webm`, `.m4v`, `.wmv`, `.flv`, `.ts`, `.mpg`
+- Audio: `.mp3`, `.m4a`, `.aac`, `.wav`, `.flac`, `.ogg`, `.opus`, `.wma`, `.aiff`
+
+Add an extension there to have the CLI discover it; files without an audio track (e.g. a silent video) are skipped with a clear error.
 
 **Outputs:**
 - Raw transcript: `<name>.txt`

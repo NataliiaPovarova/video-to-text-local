@@ -4,7 +4,9 @@
 torch
 torchvision
 torchaudio
-moviepy
+# ffmpeg is the only media tool (no moviepy, D-008). imageio-ffmpeg provides a
+# bundled ffmpeg binary when no system ffmpeg is installed (src/utils/system.py).
+imageio-ffmpeg
 PyYAML
 openai-whisper
 # Note: pyannote.audio>=4.0 pulls torchcodec as a transitive dependency for

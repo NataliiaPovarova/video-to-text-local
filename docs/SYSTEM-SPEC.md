@@ -9,7 +9,7 @@ A local, single-user Gradio web GUI over an existing Whisper transcription pipel
 
 ## Stack & surfaces
 
-- **Stack:** Python ≥3.10 (D-007; dev `.venv` 3.12.4, Docker 3.11) · openai-whisper 20250625 · numpy 2.2 · torch 2.x · Gradio 4.44.1 (`gradio>=4.44,<5`, `huggingface_hub<1.0` — GUI extra, not installed/verified in the dev `.venv`) · moviepy · pyannote.audio (optional diarization) · Ollama (optional cleanup) · pytest.
+- **Stack:** Python ≥3.10 (D-007; dev `.venv` 3.12.4, Docker 3.11) · openai-whisper 20250625 · numpy 2.2 · torch 2.x · Gradio 4.44.1 (`gradio>=4.44,<5`, `huggingface_hub<1.0` — GUI extra, not installed/verified in the dev `.venv`) · ffmpeg via `src/utils/ffmpeg_tools.py` (moviepy removed, D-012) · pyannote.audio (optional diarization) · Ollama (optional cleanup) · pytest.
 - **Entry points / surfaces:**
   - `python main.py --type {video,audio} [--language X] [--cleanup] [--diarize|--no-diarize] [--num-speakers N]` — the CLI (unchanged behavior).
   - `python app.py` — the Gradio GUI on `http://127.0.0.1:7860` (`app.py:281`).
@@ -17,6 +17,7 @@ A local, single-user Gradio web GUI over an existing Whisper transcription pipel
 - **Data model (no DB):**
   - `src/models/document.py` — `TranscriptSegment`, `TranscriptDocument` (segments + metadata), `PipelineContext` (carries state between steps, incl. `exception`).
   - History persistence — `transcripts/.history.json`, a JSON index owned by `src/history.py::HistoryStore` (atomic writes, lock-guarded). Not SQLite (single-user, zero new deps).
+- **Input gate (C-006):** `transcribe_file` probes each file once (`ffmpeg_tools.probe_media`) and accepts it when ffmpeg can read it and finds an audio stream — any extension; video vs audio follows the probe (cover art is not video); the probe travels on `PipelineContext.media`. Rejections are `MediaDecodeError` ("not a media file" / "no audio track"), so CLI batches skip the file (INV-10). The config `extensions` list only drives CLI discovery and the GUI picker.
 - **External integrations (all optional / local):** Whisper model weights (local); pyannote.audio diarization (needs an HF token, env-driven); Ollama cleanup (local LLM). Missing any of these degrades gracefully with a warning — never a crash.
 - **Config:** `configurations/general_config.yaml` (paths, logging, file refs), `configurations/params.yaml` (default model — **never mutated at runtime**), `configurations/prompts.yaml`, `configurations/diarization.yaml`. Secrets in a gitignored `.env` (`.env.example` is the template).
 

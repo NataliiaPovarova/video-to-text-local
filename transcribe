@@ -4,7 +4,7 @@
 #
 # Usage:
 #   ./transcribe /path/to/video.mp4        # copy a file in and transcribe it
-#   ./transcribe /path/to/audio.mp3        # audio works too (mp3 / m4a / aac)
+#   ./transcribe /path/to/audio.mp3        # audio works too (any format ffmpeg reads: mp3, m4a, wav, flac, ...)
 #   ./transcribe                           # transcribe whatever is already in videos/
 #   ./transcribe ~/clip.mp4 --cleanup      # any extra flags pass straight to main.py
 #
@@ -31,16 +31,16 @@ if ! command -v ffmpeg >/dev/null 2>&1; then
 fi
 
 # If the first argument is an existing file, copy it into the correct input
-# folder and infer --type from its extension.
+# folder and infer --type by probing it with ffmpeg -- the same gate the
+# pipeline uses, so there is no separate extension list to keep in sync.
 TYPE_FROM_FILE=""
 if [ "$#" -ge 1 ] && [ -f "$1" ]; then
   SRC="$1"; shift
-  EXT="$(printf '%s' "${SRC##*.}" | tr '[:upper:]' '[:lower:]')"
-  case "$EXT" in
-    mp4|mov|avi|mkv|webm) TYPE_FROM_FILE="video"; DEST="videos" ;;
-    mp3|m4a|aac)          TYPE_FROM_FILE="audio"; DEST="audios" ;;
-    *) echo "Error: unsupported file type '.$EXT'. Videos: mp4/mov/avi/mkv/webm. Audio: mp3/m4a/aac." >&2; exit 1 ;;
-  esac
+  if ! TYPE_FROM_FILE="$("$PY" -m src.utils.ffmpeg_tools classify "$SRC")"; then
+    echo "Error: cannot transcribe '$(basename "$SRC")' (see message above)." >&2
+    exit 1
+  fi
+  if [ "$TYPE_FROM_FILE" = "video" ]; then DEST="videos"; else DEST="audios"; fi
   mkdir -p "$DEST"
   cp -f "$SRC" "$DEST/"
   echo "Copied '$(basename "$SRC")' -> $DEST/"

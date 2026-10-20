@@ -31,10 +31,9 @@ from src.utils import (
     load_yaml_file,
     select_device,
 )
+from src.utils.ffmpeg_tools import classify_media, probe_media
 from src.utils.naming import build_output_basename, sanitize_stem
 
-_VIDEO_EXTS = {".mp4", ".mov", ".avi", ".mkv", ".webm"}
-_AUDIO_EXTS = {".mp3", ".m4a", ".aac"}
 _device_cache: str | None = None
 
 _MODEL_LOCK = threading.Lock()
@@ -193,23 +192,25 @@ def transcribe_file(
     transcripts_dir.mkdir(parents=True, exist_ok=True)
     audios_dir = Path(paths["audios"])
     audios_dir.mkdir(parents=True, exist_ok=True)
-    ext = source_path.suffix.lower()
     transcript_extension = output["transcript_extension"]
 
     options = {"cleanup": cleanup, "diarize": diarize, "num_speakers": num_speakers}
 
-    # --- classify input ---
-    if ext in _VIDEO_EXTS:
-        input_type = "video"
-        ingestion_step = VideoIngestionStep(audios_dir, output["extracted_audio_extension"])
-    elif ext in _AUDIO_EXTS:
-        input_type = "audio"
-        ingestion_step = AudioIngestionStep()
-    else:
-        raise MediaDecodeError(
-            f"Unsupported file type '{ext or source_path.name}'. "
-            f"Supported: {', '.join(sorted(_VIDEO_EXTS | _AUDIO_EXTS))}."
+    # --- accept + classify input (plan §4.4) ---
+    # The gate is the ffmpeg probe, not the extension: any file ffmpeg can read
+    # and that has an audio stream is accepted (MediaDecodeError otherwise).
+    # Video vs audio follows the probe too (cover art is not video). The probe
+    # is done once and handed to the steps via context.media.
+    ffmpeg_exe = dependencies["ffmpeg_executable"]
+    media = probe_media(source_path, ffmpeg_exe)
+    logger.info("Media probe for %s: %s", source_path.name, media)
+    input_type = classify_media(media, source_path.name)
+    if input_type == "video":
+        ingestion_step = VideoIngestionStep(
+            audios_dir, output["extracted_audio_extension"], ffmpeg_executable=ffmpeg_exe
         )
+    else:
+        ingestion_step = AudioIngestionStep(ffmpeg_executable=ffmpeg_exe)
 
     # --- output basename (GUI: sanitized + collision-safe; CLI: plain stem) ---
     job_id = uuid.uuid4().hex
@@ -291,7 +292,7 @@ def transcribe_file(
     )
 
     # --- run ---
-    context = PipelineContext(source_path=source_path, input_type=input_type, language=language or "")
+    context = PipelineContext(source_path=source_path, input_type=input_type, language=language or "", media=media)
     pipeline = PipelineOrchestrator(steps=steps, logger=logger)
     context = pipeline.run(context)
 
