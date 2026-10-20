@@ -5,7 +5,7 @@
 
 ## Layout
 
-- `main.py` — CLI entry point. `orchestrate()` discovers files and calls the seam per file (`main.py:135`).
+- `main.py` — CLI entry point. `orchestrate()` discovers files and calls the seam per file (`main.py:140`).
 - `app.py` — Gradio Blocks GUI (run with `python app.py`). Single-file UI; includes a gradio_client bool-schema compatibility shim (top of file) and the batch runner.
 - `src/service.py` — **the seam.** `transcribe_file(...)`, `get_whisper_model` (1-slot cache), diarization-backend cache, `reset_caches()` (test helper).
 - `src/history.py` — `HistoryEntry` + `HistoryStore` (atomic, lock-guarded JSON index at `transcripts/.history.json`).
@@ -40,7 +40,7 @@
 
 ## Where the invariants are enforced
 
-- INV-1 → `main.py:48-135`  ·  INV-2 → `src/service.py:152-168`  ·  INV-3 → `src/service.py:55-148`
-- INV-4 → `app.py:280`  ·  INV-5 → `app.py:281`  ·  INV-6 → `src/utils/naming.py` (+ `src/service.py:217-218`)
-- INV-7 → `src/history.py:33,46-48`  ·  INV-8 → `src/transcription/asr_engine.py:137`
-- INV-9 → `requirements-gui.txt`  ·  INV-10 → `app.py:165-179`, `main.py`
+- INV-1 → `main.py:48-140`  ·  INV-2 → `src/service.py:151-167`  ·  INV-3 → `src/service.py:54-147`
+- INV-4 → `app.py:283`  ·  INV-5 → `app.py:284`  ·  INV-6 → `src/utils/naming.py` (+ `src/service.py:218-219`)
+- INV-7 → `src/history.py:33,46-48`  ·  INV-8 → `src/transcription/asr_engine.py:126`
+- INV-9 → `requirements-gui.txt`  ·  INV-10 → `app.py:168-182`, `main.py`

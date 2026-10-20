@@ -12,7 +12,7 @@ A local, single-user Gradio web GUI over an existing Whisper transcription pipel
 - **Stack:** Python ≥3.10 (D-007; dev `.venv` 3.12.4, Docker 3.11) · openai-whisper 20250625 · numpy 2.2 · torch 2.x · Gradio 4.44.1 (`gradio>=4.44,<5`, `huggingface_hub<1.0` — GUI extra, not installed/verified in the dev `.venv`) · ffmpeg via `src/utils/ffmpeg_tools.py` (moviepy removed, D-012) · pyannote.audio (optional diarization) · Ollama (optional cleanup) · pytest.
 - **Entry points / surfaces:**
   - `python main.py --type {video,audio} [--language X] [--cleanup] [--diarize|--no-diarize] [--num-speakers N]` — the CLI (unchanged behavior).
-  - `python app.py` — the Gradio GUI on `http://127.0.0.1:7860` (`app.py:281`).
+  - `python app.py` — the Gradio GUI on `http://127.0.0.1:7860` (`app.py:284`).
   - `src/service.py::transcribe_file(...)` — **the seam**: the single in-process function both surfaces call to transcribe one file with per-job parameters.
 - **Data model (no DB):**
   - `src/models/document.py` — `TranscriptSegment`, `TranscriptDocument` (segments + metadata), `PipelineContext` (carries state between steps, incl. `exception`).
@@ -23,16 +23,16 @@ A local, single-user Gradio web GUI over an existing Whisper transcription pipel
 
 ## Invariants (authoritative list — mirrors CLAUDE.md §5; see AUDIT.md for test status)
 
-- INV-1 — CLI parity (`main.py:48-135`).
-- INV-2 — `params.yaml` never mutated at runtime (`src/service.py:152-168`).
-- INV-3 — single resident Whisper model, evict-before-load; on CUDA one GPU slot shared with the lazily loaded diarization backend (D-013) (`src/service.py:55-148`).
-- INV-4 — one transcription at a time, `queue(default_concurrency_limit=1)` (`app.py:280`). *(PENDING test.)*
-- INV-5 — local-only `127.0.0.1` bind, no auth/cloud (`app.py:281`). *(PENDING test.)*
-- INV-6 — Unicode/Arabic-safe, collision-safe filenames (`src/utils/naming.py`; applied `src/service.py:217-218`).
+- INV-1 — CLI parity (`main.py:48-140`).
+- INV-2 — `params.yaml` never mutated at runtime (`src/service.py:151-167`).
+- INV-3 — single resident Whisper model, evict-before-load; on CUDA one GPU slot shared with the lazily loaded diarization backend (D-013) (`src/service.py:54-147`).
+- INV-4 — one transcription at a time, `queue(default_concurrency_limit=1)` (`app.py:283`). *(PENDING test.)*
+- INV-5 — local-only `127.0.0.1` bind, no auth/cloud (`app.py:284`). *(PENDING test.)*
+- INV-6 — Unicode/Arabic-safe, collision-safe filenames (`src/utils/naming.py`; applied `src/service.py:218-219`).
 - INV-7 — crash-safe, non-ASCII-preserving history index (`src/history.py:33,46-48`).
-- INV-8 — auto-detect records the real language, never blank (`src/transcription/asr_engine.py:137`).
+- INV-8 — auto-detect records the real language, never blank (`src/transcription/asr_engine.py:126`).
 - INV-9 — GUI install never downgrades numpy/torch/whisper (`requirements-gui.txt`). *(PENDING automated test.)*
-- INV-10 — a failing file never aborts a batch (`app.py:165-179`, `main.py`).
+- INV-10 — a failing file never aborts a batch (`app.py:168-182`, `main.py`).
 
 ## Known open issues at this HEAD (`87c5ab2`)
 
