@@ -62,6 +62,9 @@ LANGUAGE_CHOICES = ["Auto-detect", "en", "ru", "es", "fr", "de", "ar", "it", "pt
 _cfg = load_yaml_file(CONFIG_PATH)
 _transcripts_dir = Path(_cfg["paths"]["transcripts"])
 _default_model = load_yaml_file(_cfg["files"]["params"])["transcription_model"]
+# Upload picker offers the same convenience list the CLI uses; the seam decides
+# by probing the file, not by extension.
+_upload_types = [*_cfg["extensions"]["video"], *_cfg["extensions"]["audio"]]
 _history = HistoryStore(_transcripts_dir / ".history.json")
 
 _diar_cfg = load_diarization_config(_cfg["files"]["diarization"])
@@ -215,7 +218,7 @@ def build_ui() -> gr.Blocks:
                     file_in = gr.File(
                         label="Upload audio/video (one or many)",
                         file_count="multiple",
-                        file_types=[".mp4", ".mov", ".avi", ".mkv", ".webm", ".mp3", ".m4a", ".aac"],
+                        file_types=_upload_types,
                         type="filepath",
                     )
                     media_preview = gr.Audio(label="Preview (current upload)", visible=False)

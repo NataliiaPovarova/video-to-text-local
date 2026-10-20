@@ -15,10 +15,10 @@
   - `orchestrator.py` — runs steps, **captures the aborting exception onto `context.exception`** (`:35-36`).
   - `steps_ingestion.py` (raises `MediaDecodeError`), `steps_transcription.py` (threads `progress_callback`), `steps_diarization.py`, `steps_cleanup.py`, `steps_output.py` (optional `output_basename` override).
 - `src/transcription/` — `asr_engine.py` (Whisper wrapper; captures detected language at `:137`), `diarizer.py`, `alignment.py`, `audio_prep.py`, `diarization_backends/pyannote_backend.py` (imports torch + pyannote).
-- `src/ingestion/` — `file_loader.py` (discovery), `video_extractor.py` (moviepy audio extract).
+- `src/ingestion/` — `file_loader.py` (discovery by the config extension list).
 - `src/processing/cleanup.py` — optional Ollama cleanup.
 - `src/output/formatter.py` — txt writer; srt/vtt formatters (Phase 2).
-- `src/utils/` — `ffmpeg_tools.py` (all ffmpeg subprocess calls: `probe_media` → `MediaInfo`, `extract_audio`, `decode_to_array` — added C-005, not yet wired into the pipeline), `errors.py` (`ProcessingError`, `MediaDecodeError`), `config.py`, `cli.py`, `device.py` (imports torch), `logging_setup.py`, `system.py`, `progress.py`.
+- `src/utils/` — `ffmpeg_tools.py` (all ffmpeg subprocess calls: `probe_media` → `MediaInfo`, `classify_media` (the input gate), `extract_audio`, `decode_to_array`, `classify` CLI for the `transcribe` wrapper), `errors.py` (`ProcessingError`, `MediaDecodeError`), `config.py`, `cli.py`, `device.py` (imports torch), `logging_setup.py`, `system.py`, `progress.py`.
 - `configurations/` — `general_config.yaml`, `params.yaml`, `prompts.yaml`, `diarization.yaml`.
 - `tests/` — 19 `test_*.py` files; 111 tests collected without gradio (`test_app_smoke.py` is skipped as a module). `conftest.py` carries a speechbrain lazy-import guard for full-suite stability.
 - `docs/` — the groundwork doc set (this file et al.); `docs/archive/` holds superseded specs/plans + the pre-groundwork CLAUDE.md + openmemory.md.

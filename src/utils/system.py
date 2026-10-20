@@ -61,8 +61,8 @@ def ensure_ffmpeg_on_path(
     openai-whisper's ``load_audio`` shells out to a bare ``ffmpeg`` (and the
     project defaults ``dependencies.ffmpeg_executable`` to ``"ffmpeg"`` too), so
     on a machine with no system ffmpeg, transcription dies instantly with
-    ``FileNotFoundError: 'ffmpeg'``. moviepy already bundles a full ffmpeg via
-    imageio-ffmpeg, so fall back to that binary -- exposing it under a
+    ``FileNotFoundError: 'ffmpeg'``. The ``imageio-ffmpeg`` dependency ships a
+    full ffmpeg binary, so fall back to that binary -- exposing it under a
     PATH-resolvable name (``ffmpeg`` on POSIX, ``ffmpeg.exe`` on Windows so it
     satisfies PATHEXT) via a symlink, or a copy where symlinking is not
     permitted -- instead of forcing a separate system install.
