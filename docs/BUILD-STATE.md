@@ -62,3 +62,23 @@
  ROOT CAUSE (reproduced): src/service.py:36-37 hardcoded _VIDEO_EXTS/_AUDIO_EXTS was the real gate — clip.wav found by CLI discovery was rejected; three more unsynced lists (config, app.py file_types, transcribe case). FIX: service probes once (probe_media → classify_media), MediaInfo on PipelineContext.media, steps on ffmpeg_tools, video_extractor.py deleted, config list extended + used by app.py, wrapper uses `ffmpeg_tools classify`, mp3 extraction matches moviepy (44.1k stereo/128k); CLI discovery = union of both extension lists (gate major: audio-only .webm in audios/ was not discovered).
  NAMED TESTS: tests/test_service.py::TestInputFormatGate (7), ::TestInputFormatGateRealFfmpeg (2), ::test_config_lists_common_formats, ::test_seam_has_no_hardcoded_extension_lists; tests/test_media_decode_error.py (4 step tests rewritten for context.media); tests/test_ffmpeg_tools.py::TestClassifyCli (7), ::test_mp3_matches_moviepy_settings, ::test_transcribe_wrapper_has_no_own_extension_list; tests/test_main_batch.py::test_discovery_finds_audio_only_container_in_audios_folder, ::test_discovery_extensions_are_union_of_both_lists. PROOF: RED 31 failing for the right reasons; GREEN 179 passed/1 skipped; independent verify = new tests against HEAD production code (git archive copy) → 31 failed. INV-1 real-sample before/after byte-identical (D-012); INV-9 dry-run clean. GATE: adversarial reviewer — 0 blockers, 1 major (discovery mismatch) fixed with tests, minors: stereo mp3 fixed, diff-scope deviations recorded (D-012), preview plan corrected.
  DOCS: D-012; SYSTEM-SPEC (input gate, stack), CODEBASE-MAP, CLAUDE.md stack, README/README.ru (synced), QUICKSTART, openmemory.md. PENDING: transcribe wrapper live run on macOS/Linux. NEXT UP: C-007 — video_mode extract|direct + .wav extraction default.]
+
+[FIX-BASELINE | main red after merging #42 (C-006) and #44 (GH-27): semantic merge conflict in tests | STATUS: done — branch fix/main-red-baseline off 3354517 (main).
+ ROOT CAUSE (reproduced on a clean origin/main export): C-006 removed `src.pipeline.steps_ingestion._probe_duration` and moved the seam tests to the `_stub_probe` helper. GH-27 had been written against pre-C-006 main, and 3 of its end-to-end tests still patched the removed function, which raised AttributeError in monkeypatch. Each PR was green alone; only the combination was red: 184 passed, 3 failed, 1 skipped. No production defect.
+ FIX (test-only): `tests/test_service.py` now calls `_stub_probe(monkeypatch)` in 2 places, the GH-27 e2e test and the `_patch_real_asr` helper used by 2 tests.
+ PROOF:
+ - GREEN: 187 passed, 1 skipped.
+ - Independent verify: the repaired tests run against the pre-GH-27 production files (`38ad8d7`: service.py, steps_transcription.py, steps_diarization.py) give 7 failed, the same set as GH-27's original verify. The 3 repaired tests fail on the bug itself: pyannote loaded before transcription, and Whisper still alive at pyannote load.
+ DOCS (separate commit, §8): stale line refs re-pointed in CLAUDE.md, SYSTEM-SPEC and CODEBASE-MAP, shifted by C-006 + GH-27.
+ - INV-1 `main.py:48-140` / `:140`
+ - INV-2 `service.py:151-167`
+ - INV-3 `54-147`
+ - INV-4 `app.py:283`
+ - INV-5 `app.py:284`
+ - INV-6 `service.py:218-219`
+ - INV-8 `asr_engine.py:126`
+ - INV-10 `app.py:168-182`
+ Known cosmetic drift, left as is (append-only ledgers): D-013 precedes D-012 in DECISIONS, and the GH-27 entry precedes C-006 here (merge order).
+ GATE: no adversarial round. Test-only repair of an already-gated chunk; the verify above shows the tests still catch the original bug.
+ GREEN: 187 passed, 1 skipped.
+ NEXT UP: human merges this PR. Then C-007 (issue #25): video_mode extract|direct + .wav extraction default. The fp16 Whisper-on-CUDA chunk (second half of #27) is still open.]
