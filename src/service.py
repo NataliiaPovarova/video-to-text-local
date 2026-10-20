@@ -51,21 +51,38 @@ def _empty_cuda_cache() -> None:
         pass
 
 
+def _swaps_gpu_models(device: str) -> bool:
+    """On CUDA, Whisper and the diarization backend share one VRAM slot.
+
+    Co-resident on an 8 GB card they spill into shared system memory (the
+    Windows driver falls back instead of raising OOM) and diarization slows
+    many times over (issue #27). On CPU, RAM is plentiful: keep both cached.
+    """
+    return device.startswith("cuda")
+
+
 def get_whisper_model(name: str, device: str, logger: logging.Logger | None = None):
     """Return a resident Whisper model, holding at most one in memory.
 
     Reuses the resident model when ``name`` matches; otherwise evicts the
     previous model (drop ref + gc + empty CUDA cache) before loading the new
     one. Jobs run one at a time, so only one model is ever needed at once.
+    On CUDA a resident diarization backend is evicted first (one GPU slot).
     """
-    global _resident_model
+    global _resident_model, _diarization_backend
     log = logger or logging.getLogger("video_to_text")
     with _MODEL_LOCK:
         if _resident_model is not None and _resident_model[0] == name:
             return _resident_model[1]
+        evict = _resident_model is not None
         if _resident_model is not None:
             log.info("Evicting Whisper model '%s' to load '%s'", _resident_model[0], name)
             _resident_model = None
+        if _diarization_backend is not None and _swaps_gpu_models(device):
+            log.info("Evicting diarization model '%s' to free GPU memory", _diarization_backend[1])
+            _diarization_backend = None
+            evict = True
+        if evict:
             gc.collect()
             _empty_cuda_cache()
         log.info("Loading Whisper model: %s", name)
@@ -110,12 +127,21 @@ def _resolve_device(logger: logging.Logger) -> str:
 
 
 def get_diarization_backend(config, device: str, logger: logging.Logger):
-    """Return a cached diarization backend, keyed by (backend, model)."""
-    global _diarization_backend
+    """Return a cached diarization backend, keyed by (backend, model).
+
+    On CUDA the resident Whisper model is evicted first (one GPU slot).
+    """
+    global _diarization_backend, _resident_model
     with _MODEL_LOCK:
         key = (config.backend, config.model)
         if _diarization_backend is not None and _diarization_backend[:2] == key:
             return _diarization_backend[2]
+        _diarization_backend = None  # drop a stale (different-key) backend
+        if _resident_model is not None and _swaps_gpu_models(device):
+            logger.info("Evicting Whisper model '%s' to free GPU memory for diarization", _resident_model[0])
+            _resident_model = None
+        gc.collect()
+        _empty_cuda_cache()
         backend = create_diarization_backend(config, device, logger)
         _diarization_backend = (config.backend, config.model, backend)
         return backend
@@ -200,26 +226,30 @@ def transcribe_file(
         basename = None
 
     device = _resolve_device(logger)
-    whisper_model = get_whisper_model(model, device, logger)
+    # Load eagerly so a model-load failure still raises out of the seam before
+    # the pipeline runs -- but keep no reference here: the step fetches the
+    # model through the cache, so on CUDA it can be evicted before pyannote
+    # loads (issue #27). A local/step reference would pin it in VRAM.
+    get_whisper_model(model, device, logger)
 
     # --- assemble steps ---
     transcription_step = TranscriptionStep(
-        whisper_model=whisper_model,
+        model_loader=functools.partial(get_whisper_model, model, device, logger),
         progress_update_interval=processing["progress_update_interval_seconds"],
         progress_callback=progress_callback,
     )
     steps = [ingestion_step, transcription_step]
 
     if diarize:
-        # Backend setup eagerly loads the pyannote pipeline (model download / HF
-        # auth), which can fail before the pipeline ever runs. Diarization is an
-        # optional enhancement, so degrade gracefully: on any setup failure log
-        # a warning and skip the step -- the transcript is still produced, and
-        # the outcome-classification below flags the missing speaker labels.
+        # The pyannote backend is loaded lazily by DiarizationStep, after
+        # transcription (on CUDA, evicting Whisper first -- issue #27). A load
+        # failure (model download / HF auth) degrades inside the step; a config
+        # failure here degrades the same way: log a warning and skip the step --
+        # the transcript is still produced, and the outcome-classification
+        # below flags the missing speaker labels.
         try:
             diar_cfg = load_diarization_config(cfg["files"]["diarization"])
             diar_cfg.enabled = True
-            backend = get_diarization_backend(diar_cfg, device, logger)
         except Exception as exc:  # noqa: BLE001 -- optional feature, degrade gracefully
             logger.warning(
                 "Diarization unavailable (%s); transcribing without speaker labels.",
@@ -228,7 +258,7 @@ def transcribe_file(
         else:
             steps.append(
                 DiarizationStep(
-                    backend=backend,
+                    backend_loader=functools.partial(get_diarization_backend, diar_cfg, device, logger),
                     config=diar_cfg,
                     work_dir=audios_dir / ".diarization_cache",
                     ffmpeg_executable=dependencies["ffmpeg_executable"],
@@ -280,8 +310,9 @@ def transcribe_file(
     outputs = (doc.metadata.get("outputs") if doc else None) or {}
     warnings: list[str] = []
     status = "success"
-    # Diarization was requested but produced no result -- either backend setup
-    # failed (step skipped above) or diarize_document degraded inside the step.
+    # Diarization was requested but produced no result -- either its config
+    # failed to load (step skipped above) or the step degraded (backend load
+    # or diarize_document failed inside it).
     # Key on metadata["diarization"], which is written ONLY on full diarization
     # success and survives OutputStep (which clobbers pipeline_state to EXPORTED
     # regardless); its absence is the durable "diarization didn't happen"

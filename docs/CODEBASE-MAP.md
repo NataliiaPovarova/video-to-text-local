@@ -33,14 +33,14 @@
 ## The chokepoints (shared accessors — fix defects HERE, not at call sites)
 
 - **`src/service.py::transcribe_file`** — the one place per-job params, model caching, and output naming are wired. CLI + GUI parity lives or dies here.
-- **`src/service.py::get_whisper_model`** — the single-slot model cache (evict-before-load).
+- **`src/service.py::get_whisper_model` / `get_diarization_backend`** — the single-slot model cache (evict-before-load); on CUDA Whisper and the diarization backend evict each other (D-013).
 - **`src/history.py::HistoryStore`** — the only writer/reader of the history index (atomic + locked).
 - **`src/pipeline/orchestrator.py`** — the single place a step exception is captured onto the context (enables `MediaDecodeError` surfacing in the GUI).
 - **`src/utils/naming.py`** — the only place filenames are sanitized + de-collided.
 
 ## Where the invariants are enforced
 
-- INV-1 → `main.py:48-135`  ·  INV-2 → `src/service.py:125-141`  ·  INV-3 → `src/service.py:40-76`
-- INV-4 → `app.py:280`  ·  INV-5 → `app.py:281`  ·  INV-6 → `src/utils/naming.py` (+ `src/service.py:191-192`)
+- INV-1 → `main.py:48-135`  ·  INV-2 → `src/service.py:152-168`  ·  INV-3 → `src/service.py:55-148`
+- INV-4 → `app.py:280`  ·  INV-5 → `app.py:281`  ·  INV-6 → `src/utils/naming.py` (+ `src/service.py:217-218`)
 - INV-7 → `src/history.py:33,46-48`  ·  INV-8 → `src/transcription/asr_engine.py:137`
 - INV-9 → `requirements-gui.txt`  ·  INV-10 → `app.py:165-179`, `main.py`
