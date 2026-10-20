@@ -179,7 +179,7 @@ class TestGpuModelSwap:
         monkeypatch.setattr(service, "_resolve_device", lambda logger: "cuda")
         monkeypatch.setattr(service, "_empty_cuda_cache", lambda: None)
         monkeypatch.setattr("src.pipeline.steps_transcription.transcribe_audio", fake_transcribe)
-        monkeypatch.setattr("src.pipeline.steps_ingestion._probe_duration", lambda p: 1.0)
+        _stub_probe(monkeypatch)
         monkeypatch.setattr(
             service, "load_diarization_config",
             lambda path: MagicMock(enabled=False, backend="pyannote", model="m"),
@@ -231,7 +231,7 @@ class TestGpuModelSwap:
         monkeypatch.setattr(service.whisper, "load_model", fake_load)
         monkeypatch.setattr(service, "_resolve_device", lambda logger: device)
         monkeypatch.setattr(service, "_empty_cuda_cache", lambda: None)
-        monkeypatch.setattr("src.pipeline.steps_ingestion._probe_duration", lambda p: 1.0)
+        _stub_probe(monkeypatch)
         monkeypatch.setattr("src.transcription.asr_engine._get_audio_duration_seconds", lambda p: 2.0)
         monkeypatch.setattr(
             service, "load_diarization_config",
